@@ -9,6 +9,18 @@ interface MarketplaceVersion {
     isPreRelease: boolean;
 }
 
+interface MarketplaceApiResponse {
+    results: Array<{
+        extensions: Array<{
+            versions: Array<{
+                version: string;
+                files?: Array<{ assetType: string; source: string }>;
+                properties?: Array<{ key: string; value: string }>;
+            }>;
+        }>;
+    }>;
+}
+
 /**
  * Query VS Marketplace for AL Language extension versions.
  */
@@ -34,14 +46,12 @@ export async function queryMarketplace(): Promise<MarketplaceVersion[]> {
     const versions: MarketplaceVersion[] = [];
     for (const v of extensions[0].versions) {
         const vsixFile = v.files?.find(
-            (f: { assetType: string; source: string }) =>
-                f.assetType === 'Microsoft.VisualStudio.Services.VSIXPackage',
+            (f) => f.assetType === 'Microsoft.VisualStudio.Services.VSIXPackage',
         );
         if (!vsixFile) continue;
 
         const isPreRelease = v.properties?.some(
-            (p: { key: string; value: string }) =>
-                p.key === 'Microsoft.VisualStudio.Code.PreRelease' && p.value === 'true',
+            (p) => p.key === 'Microsoft.VisualStudio.Code.PreRelease' && p.value === 'true',
         ) ?? false;
 
         versions.push({
@@ -105,7 +115,7 @@ export async function detectFromMarketplace(
 
 // ── Internal helpers ──
 
-function postJson(url: string, body: string): Promise<Record<string, unknown>> {
+function postJson(url: string, body: string): Promise<MarketplaceApiResponse> {
     return new Promise((resolve, reject) => {
         const req = https.request(
             url,
