@@ -176,6 +176,71 @@ describe('detectFromBCArtifact', () => {
         });
     });
 
+    describe('Step A failure: manifest.json missing or unparseable', () => {
+        it('falls through to Step B when manifest.json is missing from the ZIP', async () => {
+            // Step A: extractRemoteZipEntry throws (entry not found)
+            mockExtractRemote.mockRejectedValueOnce(
+                new Error('Entry not found in ZIP: manifest.json'),
+            );
+
+            // Step B: core download succeeds
+            mockBuildVariantUrl.mockReturnValue('https://host/sandbox/15.0.0.0/core');
+            const coreZipBuffer = Buffer.from('fake-core-zip');
+            mockDownloadFullZip.mockResolvedValue(coreZipBuffer);
+            const vsixBuffer = Buffer.from('fake-vsix');
+            mockExtractLocal.mockReturnValue(vsixBuffer);
+            mockDetectVsix.mockReturnValue({ tfm: 'netstandard2.1', assemblyVersion: '10.0.0.0' });
+
+            const result = await detectFromBCArtifact(ARTIFACT_URL);
+
+            expect(result.tfm).toBe('netstandard2.1');
+            expect(result.source).toBe('bc-artifact');
+            expect(result.details).toContain('core artifact');
+        });
+
+        it('falls through to Step C when manifest.json is missing and core fails', async () => {
+            // Step A: extractRemoteZipEntry throws
+            mockExtractRemote.mockRejectedValueOnce(
+                new Error('Entry not found in ZIP: manifest.json'),
+            );
+
+            // Step B: core download fails
+            mockBuildVariantUrl.mockReturnValueOnce('https://host/sandbox/15.0.0.0/core');
+            mockDownloadFullZip.mockRejectedValue(new Error('HTTP 404'));
+
+            // Step C: platform via HTTP Range (buildArtifactVariantUrl called again for platform)
+            mockBuildVariantUrl.mockReturnValueOnce('https://host/sandbox/15.0.0.0/platform');
+            const vsixBuffer = Buffer.from('fake-platform-vsix');
+            mockExtractRemote.mockResolvedValueOnce(vsixBuffer);
+            mockDetectVsix.mockReturnValue({ tfm: 'netstandard2.1', assemblyVersion: '10.0.0.0' });
+
+            const result = await detectFromBCArtifact(ARTIFACT_URL);
+
+            expect(result.tfm).toBe('netstandard2.1');
+            expect(result.source).toBe('bc-artifact');
+            expect(result.details).toContain('platform artifact');
+        });
+
+        it('falls through to Step B when manifest.json contains invalid JSON', async () => {
+            // Step A: extraction succeeds but content is not valid JSON
+            mockExtractRemote.mockResolvedValueOnce(
+                Buffer.from('this is not json'),
+            );
+
+            // Step B: core download succeeds
+            mockBuildVariantUrl.mockReturnValue('https://host/sandbox/15.0.0.0/core');
+            mockDownloadFullZip.mockResolvedValue(Buffer.from('fake-core-zip'));
+            mockExtractLocal.mockReturnValue(Buffer.from('fake-vsix'));
+            mockDetectVsix.mockReturnValue({ tfm: 'net8.0', assemblyVersion: '17.0.0.0' });
+
+            const result = await detectFromBCArtifact(ARTIFACT_URL);
+
+            expect(result.tfm).toBe('net8.0');
+            expect(result.source).toBe('bc-artifact');
+            expect(result.details).toContain('core artifact');
+        });
+    });
+
     describe('passes correct entry paths', () => {
         it('passes "manifest.json" for manifest extraction', async () => {
             mockExtractRemote.mockResolvedValue(

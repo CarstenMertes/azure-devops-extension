@@ -23,16 +23,21 @@ interface BCArtifactManifest {
  */
 export async function detectFromBCArtifact(artifactUrl: string): Promise<TfmDetectionResult> {
     // Step A: manifest.json dotNetVersion
-    const manifestBuffer = await extractRemoteZipEntry(artifactUrl, 'manifest.json');
-    const manifest: BCArtifactManifest = JSON.parse(manifestBuffer.toString('utf-8'));
+    let manifest: BCArtifactManifest = {};
+    try {
+        const manifestBuffer = await extractRemoteZipEntry(artifactUrl, 'manifest.json');
+        manifest = JSON.parse(manifestBuffer.toString('utf-8'));
 
-    if (manifest.dotNetVersion) {
-        const tfm = getTargetFrameworkFromDotNetVersion(manifest.dotNetVersion);
-        return {
-            tfm,
-            source: 'bc-artifact',
-            details: `dotNetVersion=${manifest.dotNetVersion} from ${artifactUrl}`,
-        };
+        if (manifest.dotNetVersion) {
+            const tfm = getTargetFrameworkFromDotNetVersion(manifest.dotNetVersion);
+            return {
+                tfm,
+                source: 'bc-artifact',
+                details: `dotNetVersion=${manifest.dotNetVersion} from ${artifactUrl}`,
+            };
+        }
+    } catch {
+        // manifest.json not found or unparseable; fall through to Steps B/C
     }
 
     // Step B: "core" artifact fallback
