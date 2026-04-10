@@ -67,6 +67,29 @@ describe('detectFromBCArtifact', () => {
 
             expect(result.tfm).toBe('net9.0');
         });
+
+        it('decodes UTF-16 LE manifest with BOM', async () => {
+            const json = JSON.stringify({ dotNetVersion: '8.0.24', version: '26.0.0.0' });
+            // Encode as UTF-16 LE with BOM (FF FE)
+            const bom = Buffer.from([0xFF, 0xFE]);
+            const utf16 = Buffer.from(json, 'utf16le');
+            mockExtractRemote.mockResolvedValue(Buffer.concat([bom, utf16]));
+
+            const result = await detectFromBCArtifact(ARTIFACT_URL);
+
+            expect(result.tfm).toBe('net8.0');
+            expect(result.details).toContain('dotNetVersion=8.0.24');
+        });
+
+        it('decodes UTF-8 manifest with BOM', async () => {
+            const json = JSON.stringify({ dotNetVersion: '9.0.0' });
+            const bom = Buffer.from([0xEF, 0xBB, 0xBF]);
+            mockExtractRemote.mockResolvedValue(Buffer.concat([bom, Buffer.from(json)]));
+
+            const result = await detectFromBCArtifact(ARTIFACT_URL);
+
+            expect(result.tfm).toBe('net9.0');
+        });
     });
 
     describe('core artifact fallback', () => {

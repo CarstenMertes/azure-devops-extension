@@ -16,6 +16,19 @@ interface BCArtifactManifest {
 }
 
 /**
+ * Decode a manifest buffer that may be UTF-16 LE (with BOM) or UTF-8.
+ * Older BC artifacts (at least 16.0 and 20.0) encode manifest.json as UTF-16 LE.
+ */
+function decodeManifestBuffer(buffer: Buffer): string {
+    // UTF-16 LE BOM: FF FE
+    if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
+        return buffer.toString('utf16le').replace(/^\uFEFF/, '');
+    }
+    // UTF-8 (with or without BOM)
+    return buffer.toString('utf-8').replace(/^\uFEFF/, '');
+}
+
+/**
  * Detect TFM from a BC artifact URL using a fallback chain:
  *
  * - Read `dotNetVersion` from the artifact's manifest.json (fast path)
@@ -28,7 +41,7 @@ export async function detectFromBCArtifact(artifactUrl: string, logger: Logger =
     try {
         logger.info('Reading manifest.json from artifact...');
         const manifestBuffer = await extractRemoteZipEntry(artifactUrl, 'manifest.json', logger);
-        manifest = JSON.parse(manifestBuffer.toString('utf-8'));
+        manifest = JSON.parse(decodeManifestBuffer(manifestBuffer));
 
         if (manifest.dotNetVersion) {
             const tfm = getTargetFrameworkFromDotNetVersion(manifest.dotNetVersion);
@@ -40,8 +53,8 @@ export async function detectFromBCArtifact(artifactUrl: string, logger: Logger =
             };
         }
         logger.warn('Manifest found but missing dotNetVersion, falling back');
-    } catch {
-        logger.warn('Manifest not available, falling back');
+    } catch (err) {
+        logger.warn(`Manifest not available (${err instanceof Error ? err.message : err}), falling back`);
     }
 
     // Fallback: core artifact

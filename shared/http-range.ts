@@ -110,11 +110,27 @@ export function parseZipCentralDirectory(buffer: Buffer): ZipCentralEntry[] {
 }
 
 /**
+ * Find a ZIP central directory entry by its filename (basename match).
+ * Matches entries whose filename equals `target` exactly,
+ * or whose path ends with `/<target>` or `\<target>` (Windows-style ZIP entries).
+ */
+export function findEntryByFilename(
+    entries: ZipCentralEntry[],
+    target: string,
+): ZipCentralEntry | undefined {
+    return entries.find(
+        (e) => e.fileName === target
+            || e.fileName.endsWith(`/${target}`)
+            || e.fileName.endsWith(`\\${target}`),
+    );
+}
+
+/**
  * Extract a single file from a remote ZIP by name.
  * 1. Read EOCD → find central directory
- * 2. Parse central directory → find the target entry
- * 3. Read local file header + data
- * 4. Decompress if needed (deflate via fflate)
+ * 2. Parse central directory → find the target entry (exact match, then basename fallback)
+ * 3. Read local file header to determine actual data offset
+ * 4. Read compressed data and decompress if needed (deflate via fflate)
  */
 export async function extractRemoteZipEntry(url: string, entryPath: string, logger: Logger = nullLogger): Promise<Buffer> {
     logger.info(`Extracting '${entryPath}' from remote ZIP`);
@@ -127,27 +143,28 @@ export async function extractRemoteZipEntry(url: string, entryPath: string, logg
     );
     const entries = parseZipCentralDirectory(cdBytes);
 
-    const entry = entries.find((e) => e.fileName === entryPath);
+    const entry = entries.find((e) => e.fileName === entryPath)
+        ?? findEntryByFilename(entries, entryPath);
     if (!entry) {
         logger.debug(`Entry '${entryPath}' not found among ${entries.length} entries`);
         throw new Error(`Entry not found in ZIP: ${entryPath}`);
     }
-    logger.debug(`Found entry '${entryPath}': ${entry.compressedSize} bytes compressed, method=${entry.compressionMethod}`);
+    logger.debug(`Found entry '${entry.fileName}': ${entry.compressedSize} bytes compressed, method=${entry.compressionMethod}`);
 
-    // Read local file header (30 bytes fixed) + variable-length name + extra fields + compressed data
-    const localHeaderEnd =
-        entry.localHeaderOffset + 30 + 256 + entry.compressedSize;
-    const localBuf = await fetchRange(url, entry.localHeaderOffset, localHeaderEnd, logger);
+    // Read the 30-byte local file header to get actual name and extra field lengths
+    const localHeader = await fetchRange(url, entry.localHeaderOffset, entry.localHeaderOffset + 29, logger);
 
     const LOCAL_SIG = 0x04034b50;
-    if (localBuf.readUInt32LE(0) !== LOCAL_SIG) {
+    if (localHeader.readUInt32LE(0) !== LOCAL_SIG) {
         throw new Error('Invalid local file header signature');
     }
 
-    const localNameLen = localBuf.readUInt16LE(26);
-    const localExtraLen = localBuf.readUInt16LE(28);
-    const dataStart = 30 + localNameLen + localExtraLen;
-    const compressedData = localBuf.subarray(dataStart, dataStart + entry.compressedSize);
+    const localNameLen = localHeader.readUInt16LE(26);
+    const localExtraLen = localHeader.readUInt16LE(28);
+
+    // Fetch compressed data at the exact offset
+    const dataOffset = entry.localHeaderOffset + 30 + localNameLen + localExtraLen;
+    const compressedData = await fetchRange(url, dataOffset, dataOffset + entry.compressedSize - 1, logger);
 
     if (entry.compressionMethod === 0) {
         return Buffer.from(compressedData);

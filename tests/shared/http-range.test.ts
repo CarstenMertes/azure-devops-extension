@@ -15,6 +15,7 @@ import {
     parseZipCentralDirectory,
     readZipEOCD,
     extractRemoteZipEntry,
+    findEntryByFilename,
     type ZipCentralEntry,
 } from '@shared/http-range';
 
@@ -394,8 +395,10 @@ describe('extractRemoteZipEntry', () => {
         enqueueResponse({ statusCode: 206, body: fullZip });
         // 3. GET central directory (extractRemoteZipEntry → fetchRange for CD)
         enqueueResponse({ statusCode: 206, body: cdEntry });
-        // 4. GET local file header + data (extractRemoteZipEntry → fetchRange for local)
-        enqueueResponse({ statusCode: 206, body: localFileRecord });
+        // 4. GET 30-byte local file header
+        enqueueResponse({ statusCode: 206, body: localHeader.subarray(0, 30) });
+        // 5. GET compressed data
+        enqueueResponse({ statusCode: 206, body: fileContent });
 
         const result = await extractRemoteZipEntry('https://example.com/test.zip', 'hello.txt');
         expect(result.toString('utf-8')).toBe('Hello, World!');
@@ -435,5 +438,131 @@ describe('extractRemoteZipEntry', () => {
 
         await expect(extractRemoteZipEntry('https://example.com/test.zip', 'missing.txt'))
             .rejects.toThrow('Entry not found in ZIP: missing.txt');
+    });
+
+    it('extracts by basename when exact match fails (forward slash path)', async () => {
+        const nestedName = 'subdir/hello.txt';
+        const fileContent = Buffer.from('nested content');
+        const nameBytes = Buffer.from(nestedName, 'utf-8');
+
+        const localHeader = Buffer.alloc(30 + nameBytes.length);
+        localHeader.writeUInt32LE(0x04034b50, 0);
+        localHeader.writeUInt16LE(0, 8);
+        localHeader.writeUInt32LE(fileContent.length, 18);
+        localHeader.writeUInt32LE(fileContent.length, 22);
+        localHeader.writeUInt16LE(nameBytes.length, 26);
+        localHeader.writeUInt16LE(0, 28);
+        nameBytes.copy(localHeader, 30);
+
+        const localFileRecord = Buffer.concat([localHeader, fileContent]);
+        const cdOffset = localFileRecord.length;
+
+        const cdEntry = Buffer.alloc(46 + nameBytes.length);
+        cdEntry.writeUInt32LE(0x02014b50, 0);
+        cdEntry.writeUInt16LE(0, 10);
+        cdEntry.writeUInt32LE(fileContent.length, 20);
+        cdEntry.writeUInt32LE(fileContent.length, 22);
+        cdEntry.writeUInt16LE(nameBytes.length, 28);
+        cdEntry.writeUInt16LE(0, 30);
+        cdEntry.writeUInt16LE(0, 32);
+        cdEntry.writeUInt32LE(0, 42);
+        nameBytes.copy(cdEntry, 46);
+
+        const eocd = Buffer.alloc(22);
+        eocd.writeUInt32LE(0x06054b50, 0);
+        eocd.writeUInt16LE(1, 8);
+        eocd.writeUInt16LE(1, 10);
+        eocd.writeUInt32LE(cdEntry.length, 12);
+        eocd.writeUInt32LE(cdOffset, 16);
+        eocd.writeUInt16LE(0, 20);
+
+        const fullZip = Buffer.concat([localFileRecord, cdEntry, eocd]);
+
+        enqueueResponse({ statusCode: 200, headers: { 'content-length': String(fullZip.length) } });
+        enqueueResponse({ statusCode: 206, body: fullZip });
+        enqueueResponse({ statusCode: 206, body: cdEntry });
+        enqueueResponse({ statusCode: 206, body: localHeader.subarray(0, 30) });
+        enqueueResponse({ statusCode: 206, body: fileContent });
+
+        const result = await extractRemoteZipEntry('https://example.com/test.zip', 'hello.txt');
+        expect(result.toString('utf-8')).toBe('nested content');
+    });
+
+    it('extracts by basename when path uses backslash separators', async () => {
+        const nestedName = 'ModernDev\\program files\\ALLanguage.vsix';
+        const fileContent = Buffer.from('vsix-data');
+        const nameBytes = Buffer.from(nestedName, 'utf-8');
+
+        const localHeader = Buffer.alloc(30 + nameBytes.length);
+        localHeader.writeUInt32LE(0x04034b50, 0);
+        localHeader.writeUInt16LE(0, 8);
+        localHeader.writeUInt32LE(fileContent.length, 18);
+        localHeader.writeUInt32LE(fileContent.length, 22);
+        localHeader.writeUInt16LE(nameBytes.length, 26);
+        localHeader.writeUInt16LE(0, 28);
+        nameBytes.copy(localHeader, 30);
+
+        const localFileRecord = Buffer.concat([localHeader, fileContent]);
+        const cdOffset = localFileRecord.length;
+
+        const cdEntry = Buffer.alloc(46 + nameBytes.length);
+        cdEntry.writeUInt32LE(0x02014b50, 0);
+        cdEntry.writeUInt16LE(0, 10);
+        cdEntry.writeUInt32LE(fileContent.length, 20);
+        cdEntry.writeUInt32LE(fileContent.length, 22);
+        cdEntry.writeUInt16LE(nameBytes.length, 28);
+        cdEntry.writeUInt16LE(0, 30);
+        cdEntry.writeUInt16LE(0, 32);
+        cdEntry.writeUInt32LE(0, 42);
+        nameBytes.copy(cdEntry, 46);
+
+        const eocd = Buffer.alloc(22);
+        eocd.writeUInt32LE(0x06054b50, 0);
+        eocd.writeUInt16LE(1, 8);
+        eocd.writeUInt16LE(1, 10);
+        eocd.writeUInt32LE(cdEntry.length, 12);
+        eocd.writeUInt32LE(cdOffset, 16);
+        eocd.writeUInt16LE(0, 20);
+
+        const fullZip = Buffer.concat([localFileRecord, cdEntry, eocd]);
+
+        enqueueResponse({ statusCode: 200, headers: { 'content-length': String(fullZip.length) } });
+        enqueueResponse({ statusCode: 206, body: fullZip });
+        enqueueResponse({ statusCode: 206, body: cdEntry });
+        enqueueResponse({ statusCode: 206, body: localHeader.subarray(0, 30) });
+        enqueueResponse({ statusCode: 206, body: fileContent });
+
+        const result = await extractRemoteZipEntry('https://example.com/test.zip', 'ALLanguage.vsix');
+        expect(result.toString('utf-8')).toBe('vsix-data');
+    });
+});
+
+describe('findEntryByFilename', () => {
+    it('matches exact filename', () => {
+        const entries: ZipCentralEntry[] = [
+            { fileName: 'ALLanguage.vsix', compressedSize: 10, uncompressedSize: 10, localHeaderOffset: 0, compressionMethod: 0 },
+        ];
+        expect(findEntryByFilename(entries, 'ALLanguage.vsix')?.fileName).toBe('ALLanguage.vsix');
+    });
+
+    it('matches forward-slash nested path', () => {
+        const entries: ZipCentralEntry[] = [
+            { fileName: 'subdir/nested/ALLanguage.vsix', compressedSize: 10, uncompressedSize: 10, localHeaderOffset: 0, compressionMethod: 0 },
+        ];
+        expect(findEntryByFilename(entries, 'ALLanguage.vsix')?.fileName).toBe('subdir/nested/ALLanguage.vsix');
+    });
+
+    it('matches backslash-separated path', () => {
+        const entries: ZipCentralEntry[] = [
+            { fileName: 'ModernDev\\program files\\ALLanguage.vsix', compressedSize: 10, uncompressedSize: 10, localHeaderOffset: 0, compressionMethod: 0 },
+        ];
+        expect(findEntryByFilename(entries, 'ALLanguage.vsix')?.fileName).toContain('ALLanguage.vsix');
+    });
+
+    it('returns undefined when no match', () => {
+        const entries: ZipCentralEntry[] = [
+            { fileName: 'other.txt', compressedSize: 10, uncompressedSize: 10, localHeaderOffset: 0, compressionMethod: 0 },
+        ];
+        expect(findEntryByFilename(entries, 'ALLanguage.vsix')).toBeUndefined();
     });
 });

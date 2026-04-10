@@ -1,19 +1,9 @@
-import { parseZipCentralDirectory, ZipCentralEntry } from './http-range';
+import { parseZipCentralDirectory, ZipCentralEntry, findEntryByFilename } from './http-range';
 import { inflateSync } from 'fflate';
 import { Logger, nullLogger } from './logger';
 
-/**
- * Find a ZIP central directory entry by its filename (basename match).
- * Matches entries whose filename equals `target` exactly, or whose path ends with `/<target>`.
- */
-export function findEntryByFilename(
-    entries: ZipCentralEntry[],
-    target: string,
-): ZipCentralEntry | undefined {
-    return entries.find(
-        (e) => e.fileName === target || e.fileName.endsWith(`/${target}`),
-    );
-}
+// Re-export for consumers that imported from here
+export { findEntryByFilename } from './http-range';
 
 /**
  * Extract a single file from an in-memory ZIP buffer.
@@ -41,7 +31,9 @@ export function extractZipEntryFromBuffer(
     if (!entry) {
         const basename = entryPath.split('/').pop()!;
         const basenameMatches = entries.filter(
-            (e) => e.fileName === basename || e.fileName.endsWith(`/${basename}`),
+            (e) => e.fileName === basename
+                || e.fileName.endsWith(`/${basename}`)
+                || e.fileName.endsWith(`\\${basename}`),
         );
         if (basenameMatches.length > 0) {
             logger.debug(`Entry '${entryPath}' not found. Entries matching '${basename}': ${basenameMatches.map(e => e.fileName).join(', ')}`);
