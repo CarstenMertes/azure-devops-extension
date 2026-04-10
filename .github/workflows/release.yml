@@ -1,12 +1,11 @@
 name: "Release: Azure DevOps Extension"
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
 
 jobs:
   publish:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -59,9 +58,17 @@ jobs:
             --override "{\"version\": \"${{ steps.gitversion.outputs.majorMinorPatch }}\"}" \
             --token ${{ secrets.VISUAL_STUDIO_MARKETPLACE_PAT }}
 
+      - name: Create version tag
+        env:
+          VERSION: ${{ steps.gitversion.outputs.majorMinorPatch }}
+        run: |
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: "v${{ steps.gitversion.outputs.majorMinorPatch }}"
           generate_release_notes: true
           files: out/*.vsix
 
