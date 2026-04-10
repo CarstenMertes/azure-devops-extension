@@ -39,7 +39,15 @@ export function extractZipEntryFromBuffer(
         entry = findEntryByFilename(entries, entryPath);
     }
     if (!entry) {
-        logger.debug(`Entry '${entryPath}' not found. Available: ${entries.map(e => e.fileName).join(', ')}`);
+        const basename = entryPath.split('/').pop()!;
+        const basenameMatches = entries.filter(
+            (e) => e.fileName === basename || e.fileName.endsWith(`/${basename}`),
+        );
+        if (basenameMatches.length > 0) {
+            logger.debug(`Entry '${entryPath}' not found. Entries matching '${basename}': ${basenameMatches.map(e => e.fileName).join(', ')}`);
+        } else {
+            logger.debug(`Entry '${entryPath}' not found. No entries matching '${basename}' among ${entries.length} entries`);
+        }
         throw new Error(`Entry not found in ZIP buffer: ${entryPath}`);
     }
     logger.debug(`Found entry '${entry.fileName}': ${entry.uncompressedSize} bytes`);

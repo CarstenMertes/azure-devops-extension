@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { deflateSync } from 'fflate';
 import { extractZipEntryFromBuffer, findEntryByFilename, listZipEntries } from '../../shared/zip-local';
 import { ZipCentralEntry } from '../../shared/http-range';
+import { nullLogger } from '../../shared/logger';
 
 // ── Helpers to build minimal valid ZIP buffers ──
 
@@ -152,6 +153,36 @@ describe('extractZipEntryFromBuffer', () => {
         expect(() => extractZipEntryFromBuffer(zip, 'missing.txt')).toThrow(
             'Entry not found in ZIP buffer: missing.txt',
         );
+    });
+
+    it('logs only basename-matching entries when entry is not found', () => {
+        const zip = buildZipBuffer([
+            { name: 'a/foo.dll', content: Buffer.from('a'), compress: false },
+            { name: 'b/foo.dll', content: Buffer.from('b'), compress: false },
+            { name: 'unrelated.txt', content: Buffer.from('c'), compress: false },
+        ]);
+
+        const debugMessages: string[] = [];
+        const logger = { ...nullLogger, debug: (msg: string) => debugMessages.push(msg) };
+
+        expect(() => extractZipEntryFromBuffer(zip, 'x/y/foo.dll', logger)).toThrow();
+        const notFoundMsg = debugMessages.find((m) => m.includes('not found'));
+        expect(notFoundMsg).toContain("Entries matching 'foo.dll': a/foo.dll, b/foo.dll");
+        expect(notFoundMsg).not.toContain('unrelated.txt');
+    });
+
+    it('logs count when no basename matches exist', () => {
+        const zip = buildZipBuffer([
+            { name: 'a.txt', content: Buffer.from('a'), compress: false },
+            { name: 'b.txt', content: Buffer.from('b'), compress: false },
+        ]);
+
+        const debugMessages: string[] = [];
+        const logger = { ...nullLogger, debug: (msg: string) => debugMessages.push(msg) };
+
+        expect(() => extractZipEntryFromBuffer(zip, 'missing.dll', logger)).toThrow();
+        const notFoundMsg = debugMessages.find((m) => m.includes('not found'));
+        expect(notFoundMsg).toContain("No entries matching 'missing.dll' among 2 entries");
     });
 });
 
