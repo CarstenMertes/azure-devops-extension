@@ -63,7 +63,7 @@
             "label": "AL Compiler Path",
             "defaultValue": "",
             "required": false,
-            "helpMarkDown": "Path to the directory containing `Microsoft.Dynamics.Nav.CodeAnalysis.dll`. Used for auto-detection when `tfm` is not set."
+            "helpMarkDown": "Path to the directory containing `Microsoft.Dynamics.Nav.CodeAnalysis.dll`. The directory is searched recursively if the DLL is not found in the root. Used for auto-detection when `tfm` is not set."
         },
         {
             "name": "outputPath",
