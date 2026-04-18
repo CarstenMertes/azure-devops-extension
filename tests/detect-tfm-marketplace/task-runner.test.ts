@@ -93,4 +93,21 @@ describe('task-runner', () => {
 
         expect(mockSetResult).toHaveBeenCalledWith(tl.TaskResult.Failed, 'Network failure');
     });
+
+    it('sets assemblyVersion to empty string when null', async () => {
+        mockGetInput.mockImplementation((name: string) => {
+            if (name === 'channel') return 'current';
+            return undefined as unknown as string;
+        });
+        mockDetect.mockResolvedValue({
+            tfm: 'net8.0',
+            source: 'vs-marketplace',
+            extensionVersion: '15.0.100.0',
+            assemblyVersion: null,
+        });
+
+        await run();
+
+        expect(mockSetVariable).toHaveBeenCalledWith('assemblyVersion', '', false, true);
+    });
 });

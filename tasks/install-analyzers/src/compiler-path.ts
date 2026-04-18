@@ -1,14 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as PEStruct from 'pe-struct';
 import { TargetFramework, TfmDetectionResult, AL_COMPILER_DLL } from '../../../shared/types';
-import { getTargetFrameworkFromVersion } from '../../../shared/version-threshold';
+import { detectTfmFromBuffer, detectAssemblyVersionFromBuffer } from '../../../shared/binary-tfm';
 import { Logger, nullLogger } from '../../../shared/logger';
 
 interface DllAnalysis {
     relativePath: string;
     absolutePath: string;
-    version: string;
+    version: string | null;
     tfm: TargetFramework;
 }
 
@@ -43,45 +42,31 @@ export function findDllFiles(dirPath: string): string[] {
 }
 
 /**
- * Parse a single DLL and extract its assembly version and TFM.
+ * Parse a single DLL and extract its TFM and assembly version.
  */
 function analyzeDll(dllPath: string, basePath: string): DllAnalysis {
     const buffer = fs.readFileSync(dllPath);
-    const arrayBuffer = buffer.buffer.slice(
-        buffer.byteOffset,
-        buffer.byteOffset + buffer.byteLength,
-    );
 
-    let parsed: ReturnType<typeof PEStruct.load>;
-    try {
-        parsed = PEStruct.load(arrayBuffer);
-    } catch {
-        throw new Error(`Failed to parse PE structure: ${dllPath}`);
+    const tfm = detectTfmFromBuffer(buffer);
+    if (!tfm) {
+        throw new Error(`Could not detect target framework: ${dllPath}`);
     }
 
-    const assembly = parsed?.mdtAssembly?.values?.[0];
-    if (!assembly) {
-        throw new Error(`No Assembly metadata found in: ${dllPath}`);
-    }
-
-    const version = [
-        assembly.MajorVersion.value,
-        assembly.MinorVersion.value,
-        assembly.BuildNumber.value,
-        assembly.RevisionNumber.value,
-    ].join('.');
+    const version = detectAssemblyVersionFromBuffer(buffer);
 
     return {
         relativePath: path.relative(basePath, dllPath),
         absolutePath: dllPath,
         version,
-        tfm: getTargetFrameworkFromVersion(version),
+        tfm,
     };
 }
 
 function formatDllTable(analyses: DllAnalysis[]): string {
     const lines = analyses.map(
-        (a) => `  ${a.relativePath}  (v${a.version} → ${a.tfm})`,
+        (a) => a.version
+            ? `  ${a.relativePath}  (v${a.version} → ${a.tfm})`
+            : `  ${a.relativePath}  (${a.tfm})`,
     );
     return lines.join('\n');
 }
@@ -107,11 +92,11 @@ export async function detectFromCompilerPath(dirPath: string, logger: Logger = n
     if (analyses.length === 1) {
         const a = analyses[0];
         logger.info(`Found: ${a.relativePath}`);
-        logger.info(`Assembly version: ${a.version} → TFM: ${a.tfm}`);
+        logger.info(`TFM: ${a.tfm}${a.version ? ` (assembly version: ${a.version})` : ''}`);
         return {
             tfm: a.tfm,
             source: 'compiler-path',
-            details: `${AL_COMPILER_DLL} v${a.version}`,
+            details: a.version ? `${AL_COMPILER_DLL} v${a.version}` : `${AL_COMPILER_DLL} ${a.tfm}`,
         };
     }
 

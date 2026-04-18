@@ -243,10 +243,26 @@ describe('detectFromMarketplace', () => {
         enqueueMarketplaceResponse(response);
         mockExtract.mockResolvedValue(Buffer.from('fake-dll'));
         mockDetectDll.mockImplementation(() => {
-            throw new Error('Could not read assembly version from CodeAnalysis DLL');
+            throw new Error('Could not detect target framework from CodeAnalysis DLL');
         });
 
         const { detectFromMarketplace } = await importModule();
-        await expect(detectFromMarketplace('current')).rejects.toThrow('assembly version');
+        await expect(detectFromMarketplace('current')).rejects.toThrow('Could not detect target framework');
+    });
+
+    it('handles null assemblyVersion', async () => {
+        const response = buildMarketplaceResponse([
+            { version: '15.0.100.0', vsixUrl: 'https://example.com/al.vsix' },
+        ]);
+        enqueueMarketplaceResponse(response);
+        mockExtract.mockResolvedValue(Buffer.from('fake-dll'));
+        mockDetectDll.mockReturnValue({ tfm: 'net8.0', assemblyVersion: null });
+
+        const { detectFromMarketplace } = await importModule();
+        const result = await detectFromMarketplace('current');
+
+        expect(result.tfm).toBe('net8.0');
+        expect(result.assemblyVersion).toBeNull();
+        expect(result.details).not.toContain('assemblyVersion');
     });
 });

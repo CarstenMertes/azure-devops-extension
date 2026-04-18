@@ -126,6 +126,35 @@ export function findEntryByFilename(
 }
 
 /**
+ * Extract a single file from a remote ZIP using a known central directory entry.
+ * Reads the local file header, fetches compressed data, and decompresses.
+ */
+export async function extractRemoteZipCentralEntry(url: string, entry: ZipCentralEntry, logger: Logger = nullLogger): Promise<Buffer> {
+    logger.debug(`Extracting entry '${entry.fileName}': ${entry.compressedSize} bytes compressed, method=${entry.compressionMethod}`);
+
+    const localHeader = await fetchRange(url, entry.localHeaderOffset, entry.localHeaderOffset + 29, logger);
+
+    const LOCAL_SIG = 0x04034b50;
+    if (localHeader.readUInt32LE(0) !== LOCAL_SIG) {
+        throw new Error('Invalid local file header signature');
+    }
+
+    const localNameLen = localHeader.readUInt16LE(26);
+    const localExtraLen = localHeader.readUInt16LE(28);
+
+    const dataOffset = entry.localHeaderOffset + 30 + localNameLen + localExtraLen;
+    const compressedData = await fetchRange(url, dataOffset, dataOffset + entry.compressedSize - 1, logger);
+
+    if (entry.compressionMethod === 0) {
+        return Buffer.from(compressedData);
+    } else if (entry.compressionMethod === 8) {
+        return Buffer.from(inflateSync(compressedData));
+    } else {
+        throw new Error(`Unsupported compression method: ${entry.compressionMethod}`);
+    }
+}
+
+/**
  * Extract a single file from a remote ZIP by name.
  * 1. Read EOCD → find central directory
  * 2. Parse central directory → find the target entry (exact match, then basename fallback)
@@ -149,30 +178,8 @@ export async function extractRemoteZipEntry(url: string, entryPath: string, logg
         logger.debug(`Entry '${entryPath}' not found among ${entries.length} entries`);
         throw new Error(`Entry not found in ZIP: ${entryPath}`);
     }
-    logger.debug(`Found entry '${entry.fileName}': ${entry.compressedSize} bytes compressed, method=${entry.compressionMethod}`);
 
-    // Read the 30-byte local file header to get actual name and extra field lengths
-    const localHeader = await fetchRange(url, entry.localHeaderOffset, entry.localHeaderOffset + 29, logger);
-
-    const LOCAL_SIG = 0x04034b50;
-    if (localHeader.readUInt32LE(0) !== LOCAL_SIG) {
-        throw new Error('Invalid local file header signature');
-    }
-
-    const localNameLen = localHeader.readUInt16LE(26);
-    const localExtraLen = localHeader.readUInt16LE(28);
-
-    // Fetch compressed data at the exact offset
-    const dataOffset = entry.localHeaderOffset + 30 + localNameLen + localExtraLen;
-    const compressedData = await fetchRange(url, dataOffset, dataOffset + entry.compressedSize - 1, logger);
-
-    if (entry.compressionMethod === 0) {
-        return Buffer.from(compressedData);
-    } else if (entry.compressionMethod === 8) {
-        return Buffer.from(inflateSync(compressedData));
-    } else {
-        throw new Error(`Unsupported compression method: ${entry.compressionMethod}`);
-    }
+    return extractRemoteZipCentralEntry(url, entry, logger);
 }
 
 // ── Internal helpers ──

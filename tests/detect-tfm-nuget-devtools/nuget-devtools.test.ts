@@ -2,13 +2,35 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { IncomingMessage } from 'http';
 import { Readable } from 'stream';
 
-// Mock https before importing the module under test
+// Mock https for resolveDevToolsVersion (fetchJson)
 vi.mock('https', () => ({
     get: vi.fn(),
 }));
 
+// Mock http-range for central directory parsing
+vi.mock('../../shared/http-range', () => ({
+    readZipEOCD: vi.fn(),
+    fetchRange: vi.fn(),
+    parseZipCentralDirectory: vi.fn(),
+    extractRemoteZipCentralEntry: vi.fn(),
+}));
+
+// Mock binary-tfm for TFM detection
+vi.mock('../../shared/binary-tfm', () => ({
+    detectTfmFromBuffer: vi.fn(),
+}));
+
 import * as https from 'https';
-import { resolveDevToolsVersion, detectFromNuGetDevTools } from '../../tasks/detect-tfm-nuget-devtools/src/nuget-devtools';
+import { readZipEOCD, fetchRange, parseZipCentralDirectory, extractRemoteZipCentralEntry } from '../../shared/http-range';
+import { detectTfmFromBuffer } from '../../shared/binary-tfm';
+import { resolveDevToolsVersion, detectFromNuGetDevTools, selectBestDllEntry } from '../../tasks/detect-tfm-nuget-devtools/src/nuget-devtools';
+import type { ZipCentralEntry } from '../../shared/http-range';
+
+const mockReadEOCD = vi.mocked(readZipEOCD);
+const mockFetchRange = vi.mocked(fetchRange);
+const mockParseCentralDir = vi.mocked(parseZipCentralDirectory);
+const mockExtractEntry = vi.mocked(extractRemoteZipCentralEntry);
+const mockDetectTfm = vi.mocked(detectTfmFromBuffer);
 
 function createMockResponse(body: object, statusCode = 200): IncomingMessage {
     const readable = new Readable({
@@ -22,20 +44,9 @@ function createMockResponse(body: object, statusCode = 200): IncomingMessage {
     return readable as IncomingMessage;
 }
 
-function createRedirectResponse(location: string): IncomingMessage {
-    const readable = new Readable({
-        read() {
-            this.push(null);
-        },
-    });
-    (readable as IncomingMessage).statusCode = 302;
-    (readable as IncomingMessage).headers = { location };
-    return readable as IncomingMessage;
-}
-
 function mockHttpsGet(response: IncomingMessage) {
-    (https.get as ReturnType<typeof vi.fn>).mockImplementation((_url, callback) => {
-        (callback as (res: IncomingMessage) => void)(response);
+    (https.get as ReturnType<typeof vi.fn>).mockImplementation((_url: string, callback: (res: IncomingMessage) => void) => {
+        callback(response);
         return { on: vi.fn() };
     });
 }
@@ -75,39 +86,113 @@ describe('resolveDevToolsVersion', () => {
     });
 });
 
+describe('selectBestDllEntry', () => {
+    it('selects entry with highest preference TFM', () => {
+        const entries: ZipCentralEntry[] = [
+            { fileName: 'lib/netstandard2.1/Microsoft.Dynamics.Nav.CodeAnalysis.dll', compressedSize: 100, uncompressedSize: 200, localHeaderOffset: 0, compressionMethod: 8 },
+            { fileName: 'lib/net8.0/Microsoft.Dynamics.Nav.CodeAnalysis.dll', compressedSize: 100, uncompressedSize: 200, localHeaderOffset: 300, compressionMethod: 8 },
+        ];
+        const result = selectBestDllEntry(entries);
+        expect(result?.fileName).toContain('net8.0');
+    });
+
+    it('returns undefined when no DLL entries match', () => {
+        const entries: ZipCentralEntry[] = [
+            { fileName: 'lib/net8.0/SomeOther.dll', compressedSize: 100, uncompressedSize: 200, localHeaderOffset: 0, compressionMethod: 8 },
+        ];
+        expect(selectBestDllEntry(entries)).toBeUndefined();
+    });
+
+    it('handles entries with unknown TFM', () => {
+        const entries: ZipCentralEntry[] = [
+            { fileName: 'lib/unknownTfm/Microsoft.Dynamics.Nav.CodeAnalysis.dll', compressedSize: 100, uncompressedSize: 200, localHeaderOffset: 0, compressionMethod: 8 },
+        ];
+        const result = selectBestDllEntry(entries);
+        expect(result?.fileName).toContain('unknownTfm');
+    });
+});
+
 describe('detectFromNuGetDevTools', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
-    it('detects net8.0 for a version above the threshold (26.0.12345.0)', async () => {
+    it('detects TFM via HTTP Range + binary search pipeline', async () => {
+        // Mock EOCD + central directory
+        mockReadEOCD.mockResolvedValue({ centralDirectoryOffset: 1000, centralDirectorySize: 500, entryCount: 2 });
+        mockFetchRange.mockResolvedValue(Buffer.from('fake-cd-data'));
+        mockParseCentralDir.mockReturnValue([
+            { fileName: 'lib/net8.0/Microsoft.Dynamics.Nav.CodeAnalysis.dll', compressedSize: 100, uncompressedSize: 200, localHeaderOffset: 0, compressionMethod: 8 },
+            { fileName: 'lib/netstandard2.1/Microsoft.Dynamics.Nav.CodeAnalysis.dll', compressedSize: 100, uncompressedSize: 200, localHeaderOffset: 300, compressionMethod: 8 },
+        ]);
+        mockExtractEntry.mockResolvedValue(Buffer.from('fake-dll'));
+        mockDetectTfm.mockReturnValue('net8.0');
+
         const result = await detectFromNuGetDevTools('26.0.12345.0');
+
         expect(result.tfm).toBe('net8.0');
         expect(result.source).toBe('nuget-devtools');
         expect(result.details).toContain('26.0.12345.0');
-    });
-
-    it('detects netstandard2.1 for a version below the threshold (15.0.12345.0)', async () => {
-        const result = await detectFromNuGetDevTools('15.0.12345.0');
-        expect(result.tfm).toBe('netstandard2.1');
-        expect(result.source).toBe('nuget-devtools');
-        expect(result.details).toContain('15.0.12345.0');
+        expect(mockReadEOCD).toHaveBeenCalled();
+        expect(mockExtractEntry).toHaveBeenCalled();
+        expect(mockDetectTfm).toHaveBeenCalled();
     });
 
     it('resolves "latest" and detects TFM correctly', async () => {
+        // First: resolve version
         mockHttpsGet(createMockResponse(sampleVersions));
+
+        // Then: HTTP Range pipeline
+        mockReadEOCD.mockResolvedValue({ centralDirectoryOffset: 1000, centralDirectorySize: 500, entryCount: 1 });
+        mockFetchRange.mockResolvedValue(Buffer.from('fake-cd-data'));
+        mockParseCentralDir.mockReturnValue([
+            { fileName: 'lib/net8.0/Microsoft.Dynamics.Nav.CodeAnalysis.dll', compressedSize: 100, uncompressedSize: 200, localHeaderOffset: 0, compressionMethod: 8 },
+        ]);
+        mockExtractEntry.mockResolvedValue(Buffer.from('fake-dll'));
+        mockDetectTfm.mockReturnValue('net8.0');
+
         const result = await detectFromNuGetDevTools('latest');
-        // Latest stable is 26.0.54321.0 which is > threshold → net8.0
         expect(result.tfm).toBe('net8.0');
         expect(result.source).toBe('nuget-devtools');
         expect(result.details).toContain('26.0.54321.0');
     });
 
-    it('always sets source to "nuget-devtools"', async () => {
-        const r1 = await detectFromNuGetDevTools('15.0.12345.0');
-        expect(r1.source).toBe('nuget-devtools');
+    it('throws when CodeAnalysis DLL is not in package', async () => {
+        mockReadEOCD.mockResolvedValue({ centralDirectoryOffset: 1000, centralDirectorySize: 500, entryCount: 1 });
+        mockFetchRange.mockResolvedValue(Buffer.from('fake-cd-data'));
+        mockParseCentralDir.mockReturnValue([
+            { fileName: 'lib/net8.0/SomeOther.dll', compressedSize: 100, uncompressedSize: 200, localHeaderOffset: 0, compressionMethod: 8 },
+        ]);
 
-        const r2 = await detectFromNuGetDevTools('26.0.12345.0');
-        expect(r2.source).toBe('nuget-devtools');
+        await expect(detectFromNuGetDevTools('26.0.12345.0')).rejects.toThrow(
+            'not found in NuGet package',
+        );
+    });
+
+    it('throws when TFM cannot be detected from DLL', async () => {
+        mockReadEOCD.mockResolvedValue({ centralDirectoryOffset: 1000, centralDirectorySize: 500, entryCount: 1 });
+        mockFetchRange.mockResolvedValue(Buffer.from('fake-cd-data'));
+        mockParseCentralDir.mockReturnValue([
+            { fileName: 'lib/net8.0/Microsoft.Dynamics.Nav.CodeAnalysis.dll', compressedSize: 100, uncompressedSize: 200, localHeaderOffset: 0, compressionMethod: 8 },
+        ]);
+        mockExtractEntry.mockResolvedValue(Buffer.from('fake-dll'));
+        mockDetectTfm.mockReturnValue(null);
+
+        await expect(detectFromNuGetDevTools('26.0.12345.0')).rejects.toThrow(
+            'Could not detect TFM',
+        );
+    });
+
+    it('always sets source to "nuget-devtools"', async () => {
+        mockReadEOCD.mockResolvedValue({ centralDirectoryOffset: 1000, centralDirectorySize: 500, entryCount: 1 });
+        mockFetchRange.mockResolvedValue(Buffer.from('fake-cd-data'));
+        mockParseCentralDir.mockReturnValue([
+            { fileName: 'lib/netstandard2.1/Microsoft.Dynamics.Nav.CodeAnalysis.dll', compressedSize: 100, uncompressedSize: 200, localHeaderOffset: 0, compressionMethod: 8 },
+        ]);
+        mockExtractEntry.mockResolvedValue(Buffer.from('fake-dll'));
+        mockDetectTfm.mockReturnValue('netstandard2.0');
+
+        const result = await detectFromNuGetDevTools('15.0.12345.0');
+        expect(result.source).toBe('nuget-devtools');
     });
 });

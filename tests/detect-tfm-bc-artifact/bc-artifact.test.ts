@@ -111,7 +111,6 @@ describe('detectFromBCArtifact', () => {
 
             expect(result.tfm).toBe('netstandard2.1');
             expect(result.source).toBe('bc-artifact');
-            expect(result.details).toContain('assemblyVersion=14.0.0.0');
             expect(result.details).toContain('core artifact');
             expect(mockBuildVariantUrl).toHaveBeenCalledWith(ARTIFACT_URL, 'core');
             expect(mockExtractLocal).toHaveBeenCalledWith(coreZipBuffer, 'ALLanguage.vsix', expect.any(Object));

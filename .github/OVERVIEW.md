@@ -66,7 +66,7 @@ Using the wrong TFM causes runtime errors. This extension auto-detects which one
 
 ### Detection Methods
 
-**Compiler path** — Reads the `Microsoft.Dynamics.Nav.CodeAnalysis.dll` from your AL compiler directory, PE-parses the binary to extract the AssemblyVersion, and maps it to a TFM via a version threshold.
+**Compiler path** — Reads the `Microsoft.Dynamics.Nav.CodeAnalysis.dll` from your AL compiler directory and binary-searches the DLL for the embedded `TargetFrameworkAttribute` to determine the TFM.
 
 **BC Artifact** — BC artifact URLs point to large ZIP files (~2GB). The task uses a **3-step waterfall**:
 
@@ -76,7 +76,7 @@ Using the wrong TFM causes runtime errors. This extension auto-detects which one
 
 All three steps are pure TypeScript with no external dependencies like BcContainerHelper.
 
-**NuGet DevTools** — Queries the NuGet API for `Microsoft.Dynamics.BusinessCentral.Development.Tools` package versions. The package version corresponds to the AL compiler version, which maps to a TFM via the same version threshold.
+**NuGet DevTools** — Queries the NuGet API for `Microsoft.Dynamics.BusinessCentral.Development.Tools` package versions, then extracts the CodeAnalysis DLL via HTTP Range requests and binary-searches it for the TFM.
 
 **VS Marketplace** — Queries the Visual Studio Marketplace API for the AL Language extension (`ms-dynamics-smb.al`). Extracts the ALLanguage.vsix via HTTP Range, then uses the shared VSIX-TFM detection chain (PE-parses `CodeAnalysis.dll` for the AssemblyVersion) to map to TFM.
 
@@ -121,7 +121,7 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for testing in Azure DevOps setup.
 
 - **TypeScript** + **esbuild** — each task bundles to a single file (250-430KB)
 - **vitest** — test runner with built-in mocking (zero config)
-- **pe-struct** — PE/DLL binary parsing (no .NET runtime needed)
+- **fflate** — ZIP compression/decompression (pure JS)
 - **fflate** — ZIP handling (pure JS, cross-platform)
 - **azure-pipelines-task-lib** — Azure DevOps task SDK
 - **Node 24** primary + **Node 20** fallback execution handlers

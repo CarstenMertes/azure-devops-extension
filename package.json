@@ -38,7 +38,6 @@
   "dependencies": {
     "azure-pipelines-task-lib": "^5.2.8",
     "fflate": "^0.8.2",
-    "pe-struct": "^0.9.4",
     "semver": "^7.7.4"
   },
   "engines": {

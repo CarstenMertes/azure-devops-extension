@@ -27,7 +27,7 @@ See [ARCHITECTURE.md](.github/ARCHITECTURE.md) for the full architecture overvie
 azure-devops-extension/
 ├── shared/              Shared modules (bundled into each task)
 │   ├── types.ts             Constants, types, interfaces
-│   ├── version-threshold.ts Assembly version → TFM mapping
+│   ├── version-threshold.ts .NET runtime version → TFM mapping
 │   ├── http-range.ts        HTTP Range + remote ZIP extraction
 │   ├── zip-local.ts         In-memory ZIP extraction from Buffer
 │   ├── vsix-tfm.ts          VSIX → DLL → PE → TFM (shared chain)
@@ -208,7 +208,7 @@ Subsequent pushes to `main` auto-update the dev extension. Azure DevOps picks up
 | **Node.js/TypeScript** over PowerShell | PowerShell isn't guaranteed on all Azure DevOps agents (especially Linux) |
 | **4 separate tasks** instead of 1 monolithic task | Clean separation of concerns; consumers only use what they need |
 | **esbuild** over webpack/tsc output | Single-file bundles (~250-430KB), fast builds (<100ms), zero config |
-| **pe-struct** for DLL parsing | Lightweight PE parser, no .NET runtime needed on the agent |
+| **Binary search** (`Buffer.indexOf()`) for DLL analysis | Reads TargetFrameworkAttribute directly from .NET assemblies, no PE parsing or .NET runtime needed |
 | **HTTP Range requests** for remote ZIPs | Download ~200KB instead of ~2GB for BC artifacts or ~100MB for VSIX |
 | **fflate** for ZIP handling | Pure JS, works on all platforms, used by the VS Code extension too |
 | **Node24 primary + Node20 fallback** | Node 24 is Active LTS; Node 20 end-of-support is April 2026 |

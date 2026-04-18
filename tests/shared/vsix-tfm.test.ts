@@ -1,40 +1,71 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('pe-struct', () => ({
-    load: vi.fn(),
+vi.mock('../../shared/binary-tfm', () => ({
+    detectTfmFromBuffer: vi.fn(),
+    detectAssemblyVersionFromBuffer: vi.fn(),
 }));
 vi.mock('../../shared/zip-local', () => ({
     extractZipEntryFromBuffer: vi.fn(),
 }));
 
-import * as PEStruct from 'pe-struct';
+import { detectTfmFromBuffer, detectAssemblyVersionFromBuffer } from '../../shared/binary-tfm';
 import { extractZipEntryFromBuffer } from '../../shared/zip-local';
-import { detectTfmFromVsixBuffer } from '../../shared/vsix-tfm';
+import { detectTfmFromVsixBuffer, detectTfmFromDllBuffer } from '../../shared/vsix-tfm';
 
-const mockLoad = vi.mocked(PEStruct.load);
+const mockDetectTfm = vi.mocked(detectTfmFromBuffer);
+const mockDetectVersion = vi.mocked(detectAssemblyVersionFromBuffer);
 const mockExtractEntry = vi.mocked(extractZipEntryFromBuffer);
 
 beforeEach(() => {
     vi.clearAllMocks();
 });
 
-function mockPeResult(major: number, minor: number, build: number, revision: number) {
-    mockLoad.mockReturnValue({
-        mdtAssembly: {
-            values: [{
-                MajorVersion: { value: major },
-                MinorVersion: { value: minor },
-                BuildNumber: { value: build },
-                RevisionNumber: { value: revision },
-            }],
-        },
-    } as unknown as ReturnType<typeof PEStruct.load>);
-}
+describe('detectTfmFromDllBuffer', () => {
+    it('detects net8.0 with assembly version', () => {
+        mockDetectTfm.mockReturnValue('net8.0');
+        mockDetectVersion.mockReturnValue('17.0.0.0');
+
+        const result = detectTfmFromDllBuffer(Buffer.from('fake-dll'));
+
+        expect(result.tfm).toBe('net8.0');
+        expect(result.assemblyVersion).toBe('17.0.0.0');
+    });
+
+    it('detects netstandard2.1 with assembly version', () => {
+        mockDetectTfm.mockReturnValue('netstandard2.1');
+        mockDetectVersion.mockReturnValue('14.0.0.0');
+
+        const result = detectTfmFromDllBuffer(Buffer.from('fake-dll'));
+
+        expect(result.tfm).toBe('netstandard2.1');
+        expect(result.assemblyVersion).toBe('14.0.0.0');
+    });
+
+    it('returns null assemblyVersion when not found', () => {
+        mockDetectTfm.mockReturnValue('net8.0');
+        mockDetectVersion.mockReturnValue(null);
+
+        const result = detectTfmFromDllBuffer(Buffer.from('fake-dll'));
+
+        expect(result.tfm).toBe('net8.0');
+        expect(result.assemblyVersion).toBeNull();
+    });
+
+    it('throws when TFM not detected', () => {
+        mockDetectTfm.mockReturnValue(null);
+        mockDetectVersion.mockReturnValue('17.0.0.0');
+
+        expect(() => detectTfmFromDllBuffer(Buffer.from('fake-dll'))).toThrow(
+            'Could not detect target framework from CodeAnalysis DLL',
+        );
+    });
+});
 
 describe('detectTfmFromVsixBuffer', () => {
-    it('detects net8.0 from assembly version > threshold', () => {
+    it('extracts DLL from VSIX and detects TFM', () => {
         mockExtractEntry.mockReturnValue(Buffer.from('fake-dll'));
-        mockPeResult(17, 0, 0, 0);
+        mockDetectTfm.mockReturnValue('net8.0');
+        mockDetectVersion.mockReturnValue('17.0.0.0');
 
         const result = detectTfmFromVsixBuffer(Buffer.from('fake-vsix'));
 
@@ -44,34 +75,6 @@ describe('detectTfmFromVsixBuffer', () => {
             expect.any(Buffer),
             'extension/bin/Analyzers/Microsoft.Dynamics.Nav.CodeAnalysis.dll',
             expect.any(Object),
-        );
-    });
-
-    it('detects netstandard2.1 from assembly version <= threshold', () => {
-        mockExtractEntry.mockReturnValue(Buffer.from('fake-dll'));
-        mockPeResult(14, 0, 0, 0);
-
-        const result = detectTfmFromVsixBuffer(Buffer.from('fake-vsix'));
-
-        expect(result.tfm).toBe('netstandard2.1');
-        expect(result.assemblyVersion).toBe('14.0.0.0');
-    });
-
-    it('throws when PE parsing fails', () => {
-        mockExtractEntry.mockReturnValue(Buffer.from('fake-dll'));
-        mockLoad.mockImplementation(() => { throw new Error('bad PE'); });
-
-        expect(() => detectTfmFromVsixBuffer(Buffer.from('fake-vsix'))).toThrow(
-            'Failed to parse PE structure from CodeAnalysis DLL',
-        );
-    });
-
-    it('throws when assembly table is missing', () => {
-        mockExtractEntry.mockReturnValue(Buffer.from('fake-dll'));
-        mockLoad.mockReturnValue({} as ReturnType<typeof PEStruct.load>);
-
-        expect(() => detectTfmFromVsixBuffer(Buffer.from('fake-vsix'))).toThrow(
-            'Could not read assembly version from CodeAnalysis DLL',
         );
     });
 });

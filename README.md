@@ -236,10 +236,10 @@ tasks/
   detect-tfm-bc-artifact/  # ALCopsDetectTfmFromBCArtifact — reads manifest from remote BC artifact
   detect-tfm-nuget-devtools/ # ALCopsDetectTfmFromNuGetDevTools — resolves version from NuGet
   detect-tfm-marketplace/  # ALCopsDetectTfmFromMarketplace — queries VS Marketplace API
-shared/                    # Shared modules (version-threshold, http-range, types)
+shared/                    # Shared modules (binary-tfm, http-range, types)
 ```
 
-Each task is bundled into a single file via **esbuild** (`tasks/{name}/dist/index.js`), including all dependencies. The shared modules provide common TFM version-threshold mapping, HTTP Range request utilities, and shared type definitions.
+Each task is bundled into a single file via **esbuild** (`tasks/{name}/dist/index.js`), including all dependencies. The shared modules provide binary TFM detection from .NET assemblies, HTTP Range request utilities, and shared type definitions.
 
 ## Links
 

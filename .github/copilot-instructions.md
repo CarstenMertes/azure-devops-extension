@@ -135,7 +135,7 @@ TypeScript and vitest both use the `@shared/*` alias for imports from `shared/`:
 - **Shared modules aren't runtime-shared**: they're bundled into each task by esbuild. No `node_modules` sharing at runtime.
 - **Output variables need `isOutput: true`**: the 4th argument to `tl.setVariable()` must be `true` for downstream tasks to read the value
 - **Don't commit `tasks/*/dist/`**: these are gitignored build artifacts
-- **Version threshold is central**: `shared/types.ts` defines `TFM_VERSION_THRESHOLD`. Changes here affect all TFM detection logic.
+- **PE fixtures are real binaries**: `tests/fixtures/` contains .NET assemblies with embedded TFM and version attributes. Don't manually edit them.
 - **PE fixtures are real binaries**: `tests/fixtures/` contains .NET assemblies. Don't manually edit them.
 
 ## Documentation

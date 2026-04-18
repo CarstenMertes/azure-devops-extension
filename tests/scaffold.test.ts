@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
     TFM_PREFERENCE,
-    TFM_VERSION_THRESHOLD,
     AL_COMPILER_DLL,
     NUGET_PACKAGE_NAME,
     NUGET_FLAT_CONTAINER,
@@ -19,10 +18,6 @@ describe('scaffold: shared types', () => {
     it('should export TFM_PREFERENCE with net8.0 and netstandard2.1', () => {
         expect(TFM_PREFERENCE).toContain('net8.0');
         expect(TFM_PREFERENCE).toContain('netstandard2.1');
-    });
-
-    it('should export TFM_VERSION_THRESHOLD', () => {
-        expect(TFM_VERSION_THRESHOLD).toBe('16.0.21.53261');
     });
 
     it('should export AL_COMPILER_DLL', () => {

@@ -110,7 +110,7 @@ export async function resolveExtensionVersion(channel: string, logger: Logger = 
 export async function detectFromMarketplace(
     channel: string,
     logger: Logger = nullLogger,
-): Promise<TfmDetectionResult & { extensionVersion: string; assemblyVersion: string }> {
+): Promise<TfmDetectionResult & { extensionVersion: string; assemblyVersion: string | null }> {
     const resolved = await resolveExtensionVersion(channel, logger);
     logger.info('Extracting CodeAnalysis DLL from VSIX...');
     logger.debug(`VSIX URL: ${resolved.vsixUrl}`);
@@ -120,7 +120,7 @@ export async function detectFromMarketplace(
     return {
         tfm,
         source: 'vs-marketplace',
-        details: `extensionVersion=${resolved.version}, assemblyVersion=${assemblyVersion}`,
+        details: `extensionVersion=${resolved.version}${assemblyVersion ? `, assemblyVersion=${assemblyVersion}` : ''}`,
         extensionVersion: resolved.version,
         assemblyVersion,
     };

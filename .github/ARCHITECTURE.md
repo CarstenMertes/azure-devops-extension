@@ -50,10 +50,11 @@ A single task with 5+ TFM detection modes was confusing. Separate tasks:
 azure-devops-extension/
 ├── shared/                              ← Shared TypeScript modules
 │   ├── types.ts                         Constants, types, interfaces
-│   ├── version-threshold.ts             Assembly version → TFM mapping
+│   ├── version-threshold.ts             .NET runtime version → TFM mapping
 │   ├── http-range.ts                    HTTP Range requests + remote ZIP parsing
 │   ├── zip-local.ts                     In-memory ZIP extraction from Buffer
-│   ├── vsix-tfm.ts                      VSIX → DLL → PE parse → TFM (shared chain)
+│   ├── binary-tfm.ts                    Binary search for TFM + assembly version in DLL
+│   ├── vsix-tfm.ts                      VSIX → DLL → binary search → TFM (shared chain)
 │   └── bc-artifact-url.ts               BC artifact URL parsing + variant construction
 │
 ├── tasks/
@@ -80,7 +81,7 @@ azure-devops-extension/
 │   │   ├── src/
 │   │   │   ├── index.ts
 │   │   │   ├── task-runner.ts
-│   │   │   └── nuget-devtools.ts        NuGet API → version threshold → TFM
+│   │   │   └── nuget-devtools.ts        NuGet API → HTTP Range + binary search → TFM
 │   │   └── dist/index.js
 │   │
 │   └── detect-tfm-marketplace/          ← VS Marketplace detection task
@@ -136,25 +137,28 @@ Constants and interfaces used across all tasks:
 
 | Export | Value | Used By |
 |--------|-------|---------|
-| `TFM_VERSION_THRESHOLD` | `'16.0.21.53261'` | version-threshold, compiler-path |
 | `AL_COMPILER_DLL` | `'Microsoft.Dynamics.Nav.CodeAnalysis.dll'` | compiler-path |
 | `NUGET_PACKAGE_NAME` | `'ALCops.Analyzers'` | nuget-api |
 | `NUGET_FLAT_CONTAINER` | `'https://api.nuget.org/v3-flatcontainer'` | nuget-api, nuget-devtools |
 | `VS_MARKETPLACE_API` | VS Marketplace gallery endpoint | marketplace |
 | `AL_EXTENSION_ID` | `'ms-dynamics-smb.al'` | marketplace |
 | `VSIX_DLL_PATH` | `'extension/bin/Analyzers/...'` | vsix-tfm |
-| `TFM_PREFERENCE` | `['net10.0', ..., 'netstandard2.0']` | nuget-extractor |
+| `TFM_PREFERENCE` | `['net10.0', ..., 'netstandard2.0']` | nuget-extractor, nuget-devtools |
 | `TfmDetectionResult` | Interface: `{ tfm, source, details? }` | All detection modules |
+
+### binary-tfm.ts
+
+Binary search for TFM and assembly version directly from .NET assembly DLL buffers using `Buffer.indexOf()`. No PE parsing required.
+
+- `detectTfmFromBuffer(buffer)` — Searches for `TargetFrameworkAttribute` then extracts the TFM string (e.g., `.NETCoreApp,Version=v8.0` → `net8.0`)
+- `detectAssemblyVersionFromBuffer(buffer)` — Searches for `AssemblyFileVersionAttribute` then extracts the version using blob format validation (`\x01\x00` prolog + length byte + version string)
+- `toShortTfm(longTfm)` — Converts long-form TFM to short form (e.g., `.NETCoreApp,Version=v8.0` → `net8.0`)
 
 ### version-threshold.ts
 
 Pure logic — no I/O, no dependencies beyond `types.ts`.
 
-- `compareAssemblyVersion(a, b)` — Compares two dotted version strings
-- `getTargetFrameworkFromVersion(version)` — Maps assembly version to TFM using the threshold
 - `getTargetFrameworkFromDotNetVersion(dotNetVersion)` — Maps .NET runtime version (e.g., `"8.0.24"`) to TFM
-
-**The threshold**: Assembly versions `≤ 16.0.21.53261` → `netstandard2.1`, versions `>` → `net8.0`. This comes from the VS Code extension's `dotnet-parser.ts` and [discussion #144](https://github.com/ALCops/Analyzers/discussions/144).
 
 ### http-range.ts
 
@@ -179,18 +183,18 @@ In-memory ZIP extraction for processing nested ZIPs (e.g., extracting a DLL from
 Key functions:
 - `extractZipEntryFromBuffer(zipBuffer, entryPath)` — Extract a single file from an in-memory ZIP buffer. Supports exact path match and basename match (e.g., `'ALLanguage.vsix'` finds `'path/to/ALLanguage.vsix'`)
 - `findEntryByFilename(entries, target)` — Scan central directory entries for a filename match
+- `extractRemoteZipCentralEntry(url, entry)` — Extract a specific central directory entry from a remote ZIP
 - `listZipEntries(zipBuffer)` — List all entries in a ZIP buffer
 
 Reuses `parseZipCentralDirectory` from `http-range.ts` for the central directory parsing.
 
 ### vsix-tfm.ts
 
-Shared VSIX → DLL → PE → TFM detection chain. Extracts the CodeAnalysis DLL from an ALLanguage.vsix buffer, PE-parses it for the assembly version, and maps to a TFM. Used by both the **marketplace** and **bc-artifact** tasks.
+Shared VSIX → DLL → TFM detection chain. Extracts the CodeAnalysis DLL from an ALLanguage.vsix buffer, binary-searches it for the TFM and assembly version. Used by both the **marketplace** and **bc-artifact** tasks.
 
 - `detectTfmFromVsixBuffer(vsixBuffer)` → `{ tfm, assemblyVersion }`
   1. Extracts `VSIX_DLL_PATH` from the VSIX using `extractZipEntryFromBuffer`
-  2. PE-parses the DLL with `pe-struct`
-  3. Maps assembly version to TFM via `getTargetFrameworkFromVersion`
+  2. Binary-searches the DLL for `TargetFrameworkAttribute` and `AssemblyFileVersionAttribute`
 
 ### bc-artifact-url.ts
 
@@ -312,7 +316,6 @@ On the Azure DevOps agent:
 |---------|---------|---------|
 | `azure-pipelines-task-lib` | ^5.2.8 | Azure DevOps task SDK (inputs, outputs, logging) |
 | `fflate` | ^0.8.2 | ZIP compression/decompression (pure JS) |
-| `pe-struct` | ^0.9.4 | PE/DLL binary parsing (read assembly metadata) |
 | `semver` | ^7.7.4 | Semantic version comparison |
 
 Dev dependencies: TypeScript, esbuild, vitest, eslint, tfx-cli.
@@ -322,24 +325,26 @@ Dev dependencies: TypeScript, esbuild, vitest, eslint, tfx-cli.
 - **vitest** as test runner with built-in mocking (`vi.mock`, `vi.mocked`)
 - **No real network calls** — all HTTP mocked at module level
 - **Real ZIP fixtures** — created in-memory using `fflate.zipSync()`
-- **Real PE fixtures** — minimal .NET assemblies generated via `dotnet build` (3.5KB each)
+- **Real PE fixtures** — minimal .NET assemblies generated via `dotnet build` (3.5KB each, contain embedded TFM and assembly version attributes)
 - **Module isolation** — each test file mocks its external dependencies
 
 ### Test Organization
 
 | Test File | Module | Tests |
 |-----------|--------|-------|
-| `scaffold.test.ts` | Structure verification | 15 |
-| `shared/version-threshold.test.ts` | Version comparison + TFM mapping | 20 |
-| `shared/http-range.test.ts` | HTTP Range + ZIP parsing | 15 |
-| `shared/zip-local.test.ts` | In-memory ZIP extraction | 9 |
-| `shared/vsix-tfm.test.ts` | VSIX → DLL → PE → TFM chain | 4 |
+| `scaffold.test.ts` | Structure verification | 14 |
+| `shared/version-threshold.test.ts` | .NET runtime version → TFM mapping | 6 |
+| `shared/binary-tfm.test.ts` | Binary TFM + assembly version extraction | 17 |
+| `shared/http-range.test.ts` | HTTP Range + ZIP parsing | 21 |
+| `shared/zip-local.test.ts` | In-memory ZIP extraction | 11 |
+| `shared/vsix-tfm.test.ts` | VSIX → DLL → binary search → TFM chain | 5 |
 | `shared/bc-artifact-url.test.ts` | Artifact URL parsing + variant construction | 7 |
 | `install-analyzers/nuget-api.test.ts` | NuGet API client | 9 |
-| `install-analyzers/nuget-extractor.test.ts` | ZIP extraction + TFM fallback | 6 |
-| `install-analyzers/compiler-path.test.ts` | PE parsing from real fixture DLLs | 4 |
+| `install-analyzers/nuget-extractor.test.ts` | ZIP extraction + TFM compat matching | 17 |
+| `install-analyzers/compiler-path.test.ts` | Binary TFM detection from real fixture DLLs | 15 |
 | `install-analyzers/task-runner.test.ts` | Core task orchestration | 4 |
-| `detect-tfm-bc-artifact/*.test.ts` | BC Artifact 3-step waterfall + task-runner | 11 |
-| `detect-tfm-nuget-devtools/*.test.ts` | NuGet DevTools detection + task-runner | 10 |
-| `detect-tfm-marketplace/*.test.ts` | Marketplace detection + task-runner | 15 |
-| **Total** | | **129** |
+| `detect-tfm-bc-artifact/*.test.ts` | BC Artifact 3-step waterfall + task-runner | 16 |
+| `detect-tfm-nuget-devtools/*.test.ts` | NuGet DevTools HTTP Range detection + task-runner | 14 |
+| `detect-tfm-marketplace/*.test.ts` | Marketplace detection + task-runner | 17 |
+| `shared/log-inputs.test.ts` | Task input logging | 9 |
+| **Total** | | **182** |

@@ -1,26 +1,14 @@
-/** Supported target framework monikers */
-export type TargetFramework =
-    | 'net10.0'
-    | 'net9.0'
-    | 'net8.0'
-    | 'netstandard2.1'
-    | 'netstandard2.0';
+/** Target framework moniker (e.g., 'net8.0', 'netstandard2.1') */
+export type TargetFramework = string;
 
 /** TFM preference order: most modern first */
-export const TFM_PREFERENCE: TargetFramework[] = [
+export const TFM_PREFERENCE: string[] = [
     'net10.0',
     'net9.0',
     'net8.0',
     'netstandard2.1',
     'netstandard2.0',
 ];
-
-/**
- * Assembly version threshold separating netstandard2.1 from net8.0.
- * Versions ≤ this value map to netstandard2.1; versions > map to net8.0.
- * Source: VS Code extension dotnet-parser.ts + GitHub discussion #144.
- */
-export const TFM_VERSION_THRESHOLD = '16.0.21.53261';
 
 /** The DLL filename used for TFM detection from the AL compiler directory */
 export const AL_COMPILER_DLL = 'Microsoft.Dynamics.Nav.CodeAnalysis.dll';

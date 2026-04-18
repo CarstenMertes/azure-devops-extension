@@ -1,41 +1,32 @@
-import * as PEStruct from 'pe-struct';
 import { TargetFramework, VSIX_DLL_PATH } from './types';
-import { getTargetFrameworkFromVersion } from './version-threshold';
+import { detectTfmFromBuffer, detectAssemblyVersionFromBuffer } from './binary-tfm';
 import { extractZipEntryFromBuffer } from './zip-local';
 import { Logger, nullLogger } from './logger';
 
 export interface VsixTfmResult {
     tfm: TargetFramework;
-    assemblyVersion: string;
+    assemblyVersion: string | null;
 }
 
 /**
  * Detect TFM from a raw CodeAnalysis DLL buffer.
- * Reads the PE assembly version and maps to a target framework moniker.
+ * Reads the TargetFrameworkAttribute and AssemblyFileVersionAttribute
+ * directly from the binary using Buffer.indexOf().
  */
 export function detectTfmFromDllBuffer(dllBuffer: Buffer, logger: Logger = nullLogger): VsixTfmResult {
-    logger.info('Reading assembly version from CodeAnalysis DLL');
+    logger.info('Reading target framework from CodeAnalysis DLL');
 
-    const arrayBuffer = dllBuffer.buffer.slice(
-        dllBuffer.byteOffset,
-        dllBuffer.byteOffset + dllBuffer.byteLength,
-    ) as ArrayBuffer;
-
-    let pe: ReturnType<typeof PEStruct.load>;
-    try {
-        pe = PEStruct.load(arrayBuffer);
-    } catch {
-        throw new Error('Failed to parse PE structure from CodeAnalysis DLL');
+    const tfm = detectTfmFromBuffer(dllBuffer);
+    if (!tfm) {
+        throw new Error('Could not detect target framework from CodeAnalysis DLL');
     }
 
-    const asm = pe?.mdtAssembly?.values?.[0];
-    if (!asm) {
-        throw new Error('Could not read assembly version from CodeAnalysis DLL');
+    const assemblyVersion = detectAssemblyVersionFromBuffer(dllBuffer);
+    if (assemblyVersion) {
+        logger.info(`Assembly version: ${assemblyVersion}, TFM: ${tfm}`);
+    } else {
+        logger.info(`TFM: ${tfm} (assembly version not found)`);
     }
-
-    const assemblyVersion = `${asm.MajorVersion.value}.${asm.MinorVersion.value}.${asm.BuildNumber.value}.${asm.RevisionNumber.value}`;
-    const tfm = getTargetFrameworkFromVersion(assemblyVersion);
-    logger.info(`Assembly version: ${assemblyVersion} → TFM: ${tfm}`);
 
     return { tfm, assemblyVersion };
 }

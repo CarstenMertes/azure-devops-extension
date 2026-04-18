@@ -3,9 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { zipSync } from 'fflate';
-import type { TargetFramework } from '@shared/types';
 
-import { extractAnalyzers } from '../../tasks/install-analyzers/src/nuget-extractor';
+import { extractAnalyzers, findMatchingTfmFolder } from '../../tasks/install-analyzers/src/nuget-extractor';
 
 let tmpDir: string;
 
@@ -26,6 +25,51 @@ function createNupkg(entries: Record<string, Uint8Array>): string {
 }
 
 const fakeDll = new Uint8Array([0x4d, 0x5a, 0x90, 0x00]); // MZ header stub
+
+// ────────────────────────────────────────────────────────────────
+// findMatchingTfmFolder
+// ────────────────────────────────────────────────────────────────
+describe('findMatchingTfmFolder', () => {
+    it('returns direct match when available', () => {
+        expect(findMatchingTfmFolder(['net8.0', 'netstandard2.1'], 'net8.0')).toBe('net8.0');
+    });
+
+    it('returns netstandard2.1 fallback for net* target', () => {
+        expect(findMatchingTfmFolder(['netstandard2.1'], 'net8.0')).toBe('netstandard2.1');
+    });
+
+    it('falls back to lower net version for net* target', () => {
+        expect(findMatchingTfmFolder(['net8.0', 'netstandard2.1'], 'net9.0')).toBe('net8.0');
+    });
+
+    it('tries descending net versions before netstandard fallback', () => {
+        expect(findMatchingTfmFolder(['net6.0', 'netstandard2.1'], 'net10.0')).toBe('net6.0');
+    });
+
+    it('returns netstandard upward compat (2.0 → 2.1)', () => {
+        expect(findMatchingTfmFolder(['netstandard2.1'], 'netstandard2.0')).toBe('netstandard2.1');
+    });
+
+    it('prefers lowest matching netstandard version', () => {
+        expect(findMatchingTfmFolder(['netstandard2.1', 'netstandard2.2'], 'netstandard2.0')).toBe('netstandard2.1');
+    });
+
+    it('returns null when no compatible folder exists', () => {
+        expect(findMatchingTfmFolder(['net5.0'], 'net8.0')).toBeNull();
+    });
+
+    it('returns null for empty available folders', () => {
+        expect(findMatchingTfmFolder([], 'net8.0')).toBeNull();
+    });
+
+    it('returns null when netstandard target has no compatible folder', () => {
+        expect(findMatchingTfmFolder(['net8.0'], 'netstandard2.0')).toBeNull();
+    });
+
+    it('does not match lower netstandard version', () => {
+        expect(findMatchingTfmFolder(['netstandard1.0'], 'netstandard2.0')).toBeNull();
+    });
+});
 
 // ────────────────────────────────────────────────────────────────
 // extractAnalyzers
@@ -71,9 +115,21 @@ describe('extractAnalyzers', () => {
         });
 
         const outputDir = path.join(tmpDir, 'output');
-        const result = await extractAnalyzers(nupkg, 'net9.0' as TargetFramework, outputDir);
+        const result = await extractAnalyzers(nupkg, 'net9.0', outputDir);
 
         expect(result.actualTfm).toBe('net8.0');
+        expect(result.files).toHaveLength(1);
+    });
+
+    it('falls back via netstandard upward compat (netstandard2.0 → netstandard2.1)', async () => {
+        const nupkg = createNupkg({
+            'lib/netstandard2.1/Analyzer.dll': fakeDll,
+        });
+
+        const outputDir = path.join(tmpDir, 'output');
+        const result = await extractAnalyzers(nupkg, 'netstandard2.0', outputDir);
+
+        expect(result.actualTfm).toBe('netstandard2.1');
         expect(result.files).toHaveLength(1);
     });
 

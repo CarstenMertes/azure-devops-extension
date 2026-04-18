@@ -94,7 +94,7 @@ async function detectFromCoreArtifact(
     return {
         tfm,
         source: 'bc-artifact',
-        details: `assemblyVersion=${assemblyVersion} from core artifact ${coreUrl}`,
+        details: `${assemblyVersion ? `assemblyVersion=${assemblyVersion} from ` : ''}core artifact ${coreUrl}`,
     };
 }
 
@@ -124,7 +124,7 @@ async function detectFromPlatformArtifact(
     return {
         tfm,
         source: 'bc-artifact',
-        details: `assemblyVersion=${assemblyVersion} from platform artifact ${platformUrl}`,
+        details: `${assemblyVersion ? `assemblyVersion=${assemblyVersion} from ` : ''}platform artifact ${platformUrl}`,
     };
 }
 

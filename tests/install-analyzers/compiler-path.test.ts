@@ -103,24 +103,24 @@ describe('findDllFiles', () => {
 // detectFromCompilerPath
 // ────────────────────────────────────────────────────────────────
 describe('detectFromCompilerPath', () => {
-    it('detects net8.0 from v17.0.0.0 DLL', async () => {
+    it('detects net8.0 from fixture DLL', async () => {
         const result = await detectFromCompilerPath(
             path.join(fixturesDir, 'compiler-net80'),
         );
 
         expect(result.tfm).toBe('net8.0');
         expect(result.source).toBe('compiler-path');
-        expect(result.details).toContain('17.0.0.0');
+        expect(result.details).toContain(AL_COMPILER_DLL);
     });
 
-    it('detects netstandard2.1 from v15.0.0.0 DLL', async () => {
+    it('detects netstandard2.1 from fixture DLL', async () => {
         const result = await detectFromCompilerPath(
             path.join(fixturesDir, 'compiler-netstandard21'),
         );
 
         expect(result.tfm).toBe('netstandard2.1');
         expect(result.source).toBe('compiler-path');
-        expect(result.details).toContain('15.0.0.0');
+        expect(result.details).toContain(AL_COMPILER_DLL);
     });
 
     it('detects TFM from DLL in subdirectory', async () => {
@@ -191,7 +191,7 @@ describe('detectFromCompilerPath', () => {
         }
     });
 
-    it('throws for invalid DLL', async () => {
+    it('throws for invalid DLL (no TFM detected)', async () => {
         const tmpDir = createTmpDir();
         const fakeDllPath = path.join(tmpDir, AL_COMPILER_DLL);
         fs.writeFileSync(fakeDllPath, Buffer.from('not a valid PE file'));

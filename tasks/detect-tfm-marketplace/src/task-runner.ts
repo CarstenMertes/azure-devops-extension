@@ -18,7 +18,7 @@ export async function run(): Promise<void> {
 
         tl.setVariable('tfm', result.tfm, false, true);
         tl.setVariable('extensionVersion', result.extensionVersion, false, true);
-        tl.setVariable('assemblyVersion', result.assemblyVersion, false, true);
+        tl.setVariable('assemblyVersion', result.assemblyVersion ?? '', false, true);
         tl.setResult(tl.TaskResult.Succeeded, `Detected TFM: ${result.tfm} (AL extension ${result.extensionVersion})`);
     } catch (err: unknown) {
         tl.setResult(tl.TaskResult.Failed, err instanceof Error ? err.message : String(err));
