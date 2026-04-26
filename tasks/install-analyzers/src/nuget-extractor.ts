@@ -1,8 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { unzipSync } from 'fflate';
-import { TargetFramework } from '../../../shared/types';
-import { Logger, nullLogger } from '../../../shared/logger';
+import { TargetFramework, Logger, nullLogger } from '@alcops/core';
 
 /**
  * Find the best matching TFM folder from available folders for a given target.

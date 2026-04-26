@@ -1,23 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../shared/http-range', () => ({
-    extractRemoteZipEntry: vi.fn(),
-}));
-vi.mock('../../shared/bc-artifact-url', () => ({
-    buildArtifactVariantUrl: vi.fn(),
-    downloadFullZip: vi.fn(),
-}));
-vi.mock('../../shared/zip-local', () => ({
-    extractZipEntryFromBuffer: vi.fn(),
-}));
-vi.mock('../../shared/vsix-tfm', () => ({
-    detectTfmFromVsixBuffer: vi.fn(),
-}));
+vi.mock('@alcops/core', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@alcops/core')>();
+    return {
+        ...actual,
+        extractRemoteZipEntry: vi.fn(),
+        buildArtifactVariantUrl: vi.fn(),
+        downloadFullZip: vi.fn(),
+        extractZipEntryFromBuffer: vi.fn(),
+        detectTfmFromVsixBuffer: vi.fn(),
+    };
+});
 
-import { extractRemoteZipEntry } from '../../shared/http-range';
-import { buildArtifactVariantUrl, downloadFullZip } from '../../shared/bc-artifact-url';
-import { extractZipEntryFromBuffer } from '../../shared/zip-local';
-import { detectTfmFromVsixBuffer } from '../../shared/vsix-tfm';
+import {
+    extractRemoteZipEntry, buildArtifactVariantUrl, downloadFullZip,
+    extractZipEntryFromBuffer, detectTfmFromVsixBuffer,
+} from '@alcops/core';
 import { detectFromBCArtifact } from '../../tasks/detect-tfm-bc-artifact/src/bc-artifact';
 
 const mockExtractRemote = vi.mocked(extractRemoteZipEntry);

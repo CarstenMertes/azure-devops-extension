@@ -2,7 +2,7 @@ import * as tl from 'azure-pipelines-task-lib/task';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
-import { TargetFramework } from '../../../shared/types';
+import { TargetFramework } from '@alcops/core';
 import { createTaskLogger } from '../../../shared/logger';
 import { logTaskInputs } from '../../../shared/log-inputs';
 import { resolveVersion, downloadPackage } from './nuget-api';

@@ -3,15 +3,16 @@ import { EventEmitter } from 'events';
 import * as https from 'https';
 
 vi.mock('https');
-vi.mock('../../shared/http-range', () => ({
-    extractRemoteZipEntry: vi.fn(),
-}));
-vi.mock('../../shared/vsix-tfm', () => ({
-    detectTfmFromDllBuffer: vi.fn(),
-}));
+vi.mock('@alcops/core', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@alcops/core')>();
+    return {
+        ...actual,
+        extractRemoteZipEntry: vi.fn(),
+        detectTfmFromDllBuffer: vi.fn(),
+    };
+});
 
-import { extractRemoteZipEntry } from '../../shared/http-range';
-import { detectTfmFromDllBuffer } from '../../shared/vsix-tfm';
+import { extractRemoteZipEntry, detectTfmFromDllBuffer } from '@alcops/core';
 
 const mockRequest = https.request as unknown as ReturnType<typeof vi.fn>;
 const mockExtract = vi.mocked(extractRemoteZipEntry);

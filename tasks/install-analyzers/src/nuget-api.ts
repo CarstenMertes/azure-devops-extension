@@ -1,16 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { compare, prerelease, valid } from 'semver';
-import { NUGET_PACKAGE_NAME, NUGET_FLAT_CONTAINER, RegistrationVersion } from '../../../shared/types';
-import { Logger, nullLogger } from '../../../shared/logger';
-import { queryNuGetRegistration } from '../../../shared/nuget-registration';
-import { httpsGetBuffer } from '../../../shared/http-client';
-import { getUserAgent } from '../../../shared/user-agent';
+import {
+    NUGET_PACKAGE_NAME, NUGET_FLAT_CONTAINER, RegistrationVersion,
+    Logger, nullLogger, queryNuGetRegistration, httpsGetBuffer, getUserAgent,
+} from '@alcops/core';
 import taskJson from '../task.json';
 
 const packageId = NUGET_PACKAGE_NAME.toLowerCase();
 const { Major, Minor, Patch } = taskJson.version;
-const USER_AGENT = getUserAgent(`${Major}.${Minor}.${Patch}`);
+const USER_AGENT = getUserAgent('vsts-task-installer', `${Major}.${Minor}.${Patch}`);
 
 export interface ResolvedVersion {
     version: string;

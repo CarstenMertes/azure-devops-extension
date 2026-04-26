@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 import { detectFromCompilerPath, findDllFiles } from '../../tasks/install-analyzers/src/compiler-path';
-import { AL_COMPILER_DLL } from '../../shared/types';
+import { AL_COMPILER_DLL } from '@alcops/core';
 
 const fixturesDir = path.resolve(__dirname, '..', 'fixtures');
 const net80Dll = path.join(fixturesDir, 'compiler-net80', AL_COMPILER_DLL);

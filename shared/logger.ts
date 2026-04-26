@@ -1,18 +1,8 @@
 import * as tl from 'azure-pipelines-task-lib/task';
+import type { Logger } from '@alcops/core';
 
-export interface Logger {
-    info(message: string): void;
-    debug(message: string): void;
-    warn(message: string): void;
-    error(message: string): void;
-}
-
-export const nullLogger: Logger = {
-    info() {},
-    debug() {},
-    warn() {},
-    error() {},
-};
+export type { Logger } from '@alcops/core';
+export { nullLogger } from '@alcops/core';
 
 /**
  * Create a logger that maps to Azure DevOps pipeline logging commands.

@@ -1,8 +1,11 @@
 import * as https from 'https';
-import { TfmDetectionResult, TFM_PREFERENCE, NUGET_FLAT_CONTAINER } from '../../../shared/types';
-import { readZipEOCD, fetchRange, parseZipCentralDirectory, extractRemoteZipCentralEntry, ZipCentralEntry } from '../../../shared/http-range';
-import { detectTfmFromBuffer } from '../../../shared/binary-tfm';
-import { Logger, nullLogger } from '../../../shared/logger';
+import {
+    TfmDetectionResult, TFM_PREFERENCE, NUGET_FLAT_CONTAINER,
+    Logger, nullLogger, detectTfmFromBuffer,
+    readZipEOCD, fetchRange, parseZipCentralDirectory,
+    extractRemoteZipCentralEntry,
+} from '@alcops/core';
+import type { ZipCentralEntry } from '@alcops/core';
 
 const DEVTOOLS_PACKAGE = 'microsoft.dynamics.businesscentral.development.tools';
 const CODE_ANALYSIS_DLL = 'Microsoft.Dynamics.Nav.CodeAnalysis.dll';
