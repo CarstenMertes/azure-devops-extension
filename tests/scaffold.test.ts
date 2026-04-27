@@ -9,7 +9,7 @@ import {
     VS_MARKETPLACE_API,
     AL_EXTENSION_ID,
     VSIX_DLL_PATH,
-} from '@alcops/core';
+} from '@shared/types';
 
 const ROOT = path.resolve(__dirname, '..');
 const TASKS_DIR = path.resolve(ROOT, 'tasks');

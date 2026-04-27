@@ -1,9 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import {
-    TargetFramework, TfmDetectionResult, AL_COMPILER_DLL,
-    Logger, nullLogger, detectTfmFromBuffer, detectAssemblyVersionFromBuffer,
-} from '@alcops/core';
+import { TargetFramework, TfmDetectionResult, AL_COMPILER_DLL } from '../../../shared/types';
+import { detectTfmFromBuffer, detectAssemblyVersionFromBuffer } from '../../../shared/binary-tfm';
+import { Logger, nullLogger } from '../../../shared/logger';
 
 interface DllAnalysis {
     relativePath: string;

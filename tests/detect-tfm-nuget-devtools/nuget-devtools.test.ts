@@ -7,26 +7,24 @@ vi.mock('https', () => ({
     get: vi.fn(),
 }));
 
-// Mock @alcops/core for http-range and binary-tfm functions
-vi.mock('@alcops/core', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('@alcops/core')>();
-    return {
-        ...actual,
-        readZipEOCD: vi.fn(),
-        fetchRange: vi.fn(),
-        parseZipCentralDirectory: vi.fn(),
-        extractRemoteZipCentralEntry: vi.fn(),
-        detectTfmFromBuffer: vi.fn(),
-    };
-});
+// Mock http-range for central directory parsing
+vi.mock('../../shared/http-range', () => ({
+    readZipEOCD: vi.fn(),
+    fetchRange: vi.fn(),
+    parseZipCentralDirectory: vi.fn(),
+    extractRemoteZipCentralEntry: vi.fn(),
+}));
+
+// Mock binary-tfm for TFM detection
+vi.mock('../../shared/binary-tfm', () => ({
+    detectTfmFromBuffer: vi.fn(),
+}));
 
 import * as https from 'https';
-import {
-    readZipEOCD, fetchRange, parseZipCentralDirectory,
-    extractRemoteZipCentralEntry, detectTfmFromBuffer,
-} from '@alcops/core';
-import type { ZipCentralEntry } from '@alcops/core';
+import { readZipEOCD, fetchRange, parseZipCentralDirectory, extractRemoteZipCentralEntry } from '../../shared/http-range';
+import { detectTfmFromBuffer } from '../../shared/binary-tfm';
 import { resolveDevToolsVersion, detectFromNuGetDevTools, selectBestDllEntry } from '../../tasks/detect-tfm-nuget-devtools/src/nuget-devtools';
+import type { ZipCentralEntry } from '../../shared/http-range';
 
 const mockReadEOCD = vi.mocked(readZipEOCD);
 const mockFetchRange = vi.mocked(fetchRange);

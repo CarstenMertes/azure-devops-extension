@@ -1,8 +1,8 @@
 import * as https from 'https';
-import {
-    TfmDetectionResult, VS_MARKETPLACE_API, AL_EXTENSION_ID, VSIX_DLL_PATH,
-    Logger, nullLogger, extractRemoteZipEntry, detectTfmFromDllBuffer,
-} from '@alcops/core';
+import { TfmDetectionResult, VS_MARKETPLACE_API, AL_EXTENSION_ID, VSIX_DLL_PATH } from '../../../shared/types';
+import { extractRemoteZipEntry } from '../../../shared/http-range';
+import { detectTfmFromDllBuffer } from '../../../shared/vsix-tfm';
+import { Logger, nullLogger } from '../../../shared/logger';
 
 interface MarketplaceVersion {
     version: string;

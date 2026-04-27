@@ -4,27 +4,21 @@ import * as https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { NUGET_FLAT_CONTAINER } from '@alcops/core';
-import type { RegistrationVersion } from '@alcops/core';
+import { NUGET_FLAT_CONTAINER, RegistrationVersion } from '@shared/types';
 
 // ── Mock https module (for downloadPackage binary fetches) ──
 vi.mock('https', () => ({
     request: vi.fn(),
 }));
 
-// ── Mock @alcops/core (for queryNuGetRegistration and httpsGetBuffer) ──
-vi.mock('@alcops/core', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('@alcops/core')>();
-    return {
-        ...actual,
-        queryNuGetRegistration: vi.fn(),
-        httpsGetBuffer: vi.fn(),
-    };
-});
+// ── Mock nuget-registration module ──
+vi.mock('../../shared/nuget-registration', () => ({
+    queryNuGetRegistration: vi.fn(),
+}));
 
 const mockRequest = https.request as unknown as ReturnType<typeof vi.fn>;
 
-import { queryNuGetRegistration, httpsGetBuffer } from '@alcops/core';
+import { queryNuGetRegistration } from '@shared/nuget-registration';
 import {
     resolveVersion,
     getDownloadUrl,
@@ -32,7 +26,6 @@ import {
 } from '../../tasks/install-analyzers/src/nuget-api';
 
 const mockQueryRegistration = queryNuGetRegistration as ReturnType<typeof vi.fn>;
-const mockHttpsGetBuffer = httpsGetBuffer as unknown as ReturnType<typeof vi.fn>;
 
 // ── Helpers ──
 
@@ -179,7 +172,7 @@ describe('getDownloadUrl', () => {
 describe('downloadPackage', () => {
     it('downloads and writes the .nupkg to disk', async () => {
         const fakeContent = Buffer.from('PK-fake-nupkg-content');
-        mockHttpsGetBuffer.mockResolvedValue(fakeContent);
+        enqueueResponse({ statusCode: 200, body: fakeContent });
 
         const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nuget-api-test-'));
         try {
@@ -194,7 +187,7 @@ describe('downloadPackage', () => {
 
     it('creates the destination directory if it does not exist', async () => {
         const fakeContent = Buffer.from('PK-data');
-        mockHttpsGetBuffer.mockResolvedValue(fakeContent);
+        enqueueResponse({ statusCode: 200, body: fakeContent });
 
         const tmpDir = path.join(os.tmpdir(), `nuget-api-test-nested-${Date.now()}`);
         const nestedDir = path.join(tmpDir, 'sub', 'dir');
@@ -208,13 +201,13 @@ describe('downloadPackage', () => {
 
     it('uses packageContentUrl when provided', async () => {
         const fakeContent = Buffer.from('PK-content');
-        mockHttpsGetBuffer.mockResolvedValue(fakeContent);
+        enqueueResponse({ statusCode: 200, body: fakeContent });
 
         const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nuget-api-test-'));
         const customUrl = 'https://api.nuget.org/v3-flatcontainer/alcops.analyzers/1.0.0/alcops.analyzers.1.0.0.nupkg';
         try {
             await downloadPackage('1.0.0', tmpDir, undefined, customUrl);
-            const calledUrl = mockHttpsGetBuffer.mock.calls[0][0];
+            const calledUrl = mockRequest.mock.calls[0][0];
             expect(calledUrl).toBe(customUrl);
         } finally {
             fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -223,13 +216,13 @@ describe('downloadPackage', () => {
 
     it('sets User-Agent header', async () => {
         const fakeContent = Buffer.from('PK-content');
-        mockHttpsGetBuffer.mockResolvedValue(fakeContent);
+        enqueueResponse({ statusCode: 200, body: fakeContent });
 
         const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nuget-api-test-'));
         try {
             await downloadPackage('1.0.0', tmpDir);
-            const calledUserAgent = mockHttpsGetBuffer.mock.calls[0][1] as string;
-            expect(calledUserAgent).toMatch(/^vsts-task-installer\/\d+\.\d+\.\d+ \(Node\.js v/);
+            const calledOpts = mockRequest.mock.calls[0][1] as { headers?: Record<string, string> };
+            expect(calledOpts.headers?.['User-Agent']).toMatch(/^vsts-task-installer\/\d+\.\d+\.\d+ \(Node\.js v/);
         } finally {
             fs.rmSync(tmpDir, { recursive: true, force: true });
         }

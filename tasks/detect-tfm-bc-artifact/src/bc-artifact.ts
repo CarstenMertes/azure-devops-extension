@@ -1,9 +1,10 @@
-import {
-    TfmDetectionResult, Logger, nullLogger,
-    getTargetFrameworkFromDotNetVersion, extractRemoteZipEntry,
-    buildArtifactVariantUrl, downloadFullZip,
-    extractZipEntryFromBuffer, detectTfmFromVsixBuffer,
-} from '@alcops/core';
+import { TfmDetectionResult } from '../../../shared/types';
+import { getTargetFrameworkFromDotNetVersion } from '../../../shared/version-threshold';
+import { extractRemoteZipEntry } from '../../../shared/http-range';
+import { buildArtifactVariantUrl, downloadFullZip } from '../../../shared/bc-artifact-url';
+import { extractZipEntryFromBuffer } from '../../../shared/zip-local';
+import { detectTfmFromVsixBuffer } from '../../../shared/vsix-tfm';
+import { Logger, nullLogger } from '../../../shared/logger';
 
 const VSIX_FILENAME = 'ALLanguage.vsix';
 

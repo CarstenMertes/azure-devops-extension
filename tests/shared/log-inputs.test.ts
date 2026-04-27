@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { logTaskInputs, type TaskInputDef } from '@shared/log-inputs';
-import type { Logger } from '@alcops/core';
+import type { Logger } from '@shared/logger';
 
 vi.mock('azure-pipelines-task-lib/task', () => ({
     getInput: vi.fn(),
