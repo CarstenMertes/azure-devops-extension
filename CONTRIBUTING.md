@@ -13,9 +13,9 @@ Thank you for your interest in contributing! This guide covers everything you ne
 ```bash
 cd azure-devops-extension
 npm install
-npm test          # Run all 129 tests
+npm test          # Run all tests
 npm run build     # TypeScript compilation check
-npm run bundle    # esbuild → 4 task bundles
+npm run bundle    # esbuild → 5 task bundles
 npm run package   # Bundle + tfx → .vsix
 ```
 
@@ -26,18 +26,15 @@ See [ARCHITECTURE.md](.github/ARCHITECTURE.md) for the full architecture overvie
 ```
 azure-devops-extension/
 ├── shared/              Shared modules (bundled into each task)
-│   ├── types.ts             Constants, types, interfaces
-│   ├── version-threshold.ts .NET runtime version → TFM mapping
-│   ├── http-range.ts        HTTP Range + remote ZIP extraction
-│   ├── zip-local.ts         In-memory ZIP extraction from Buffer
-│   ├── vsix-tfm.ts          VSIX → DLL → PE → TFM (shared chain)
-│   └── bc-artifact-url.ts   BC artifact URL parsing + variants
+│   ├── logger.ts            Logger interface + ADO pipeline logger
+│   └── log-inputs.ts        Task input logging helper
 ├── tasks/
-│   ├── install-analyzers/             Core install task
-│   ├── detect-tfm-bc-artifact/     BC Artifact detection (3-step waterfall)
-│   ├── detect-tfm-nuget-devtools/  NuGet DevTools detection
-│   └── detect-tfm-marketplace/     VS Marketplace detection
-└── tests/                          All tests (mirrors task structure)
+│   ├── download/                      ALCopsDownloadAnalyzers (recommended)
+│   ├── install-analyzers/             Deprecated — use download instead
+│   ├── detect-tfm-bc-artifact/        Deprecated — use download with detectUsing
+│   ├── detect-tfm-nuget-devtools/     Deprecated — use download with detectUsing
+│   └── detect-tfm-marketplace/        Deprecated — use download with detectUsing
+└── tests/                             All tests (mirrors task structure)
 ```
 
 ## Development Workflow
@@ -49,29 +46,26 @@ All code is developed test-first. Tests live in `tests/` organized by task:
 ```
 tests/
 ├── shared/                    Shared module tests
-├── install-analyzers/            Core task tests
-├── detect-tfm-bc-artifact/    BC Artifact task tests
-├── detect-tfm-nuget-devtools/ NuGet DevTools task tests
-├── detect-tfm-marketplace/    Marketplace task tests
+├── download/                  ALCopsDownloadAnalyzers task tests
+├── install-analyzers/         Deprecated task tests (kept for coverage)
+├── detect-tfm-bc-artifact/    Deprecated task tests
+├── detect-tfm-nuget-devtools/ Deprecated task tests
+├── detect-tfm-marketplace/    Deprecated task tests
 └── fixtures/                  Test fixture DLLs
 ```
 
 Run specific test suites:
 ```bash
-npx vitest run tests/shared/             # Shared modules only
-npx vitest run tests/install-analyzers/     # Core task only
-npx vitest run tests/detect-tfm-marketplace/  # Marketplace task only
-npx vitest --watch                       # Watch mode
+npx vitest run tests/shared/              # Shared modules only
+npx vitest run tests/download/            # Download task only
+npx vitest run tests/install-analyzers/   # Legacy install task only
+npx vitest --watch                        # Watch mode
 ```
 
 ### Mocking Strategy
 
-- **HTTP calls**: Mock `https` module at top of test files via `vi.mock('https')`
 - **Azure Pipelines task-lib**: Mock `azure-pipelines-task-lib/task` for task-runner tests
-- **VSIX → TFM chain**: Mock `../../shared/vsix-tfm` for tasks that detect TFM from VSIX files (marketplace, bc-artifact)
-- **In-memory ZIP extraction**: Mock `../../shared/zip-local` for tests that extract from buffers
-- **BC artifact URL utilities**: Mock `../../shared/bc-artifact-url` for URL parsing and download tests
-- **Shared modules**: Mock `../../shared/http-range` etc. for unit isolation
+- **@alcops/core**: Mock `executeDownload` and detection functions for task isolation
 - **ZIP fixtures**: Created in-memory using `fflate.zipSync()` — no external files needed
 - **PE/DLL fixtures**: Real minimal .NET assemblies in `tests/fixtures/` (generated via `dotnet build`, 3.5KB each)
 
@@ -89,7 +83,7 @@ npx vitest --watch                       # Watch mode
 Code in `shared/` is imported by multiple tasks and bundled into each task's output by esbuild (tree-shaken). When modifying shared modules:
 
 - Run the **full** test suite (`npm test`), not just one task's tests
-- Changes affect all 4 task bundles
+- Changes affect all 5 task bundles
 
 ### Build & Package
 
@@ -99,7 +93,7 @@ npm run bundle -- --production  # Production build (minified, no sourcemaps)
 npm run package                 # Creates .vsix in ./out/
 ```
 
-The `.vsix` contains all 4 tasks in a single extension install.
+The `.vsix` contains all 5 tasks in a single extension install.
 
 ## CI/CD
 
@@ -175,16 +169,17 @@ git push origin v0.1.0
 ### Using in Pipelines
 
 ```yaml
-# Detect TFM from the VS Marketplace AL Language extension
-- task: ALCopsDetectTfmFromMarketplace@1
-  displayName: 'Detect TFM'
-
-# Install ALCops analyzers using the detected TFM
-- task: ALCopsInstallAnalyzers@1
-  displayName: 'Install ALCops'
+# Download ALCops analyzers with automatic TFM detection
+- task: ALCopsDownloadAnalyzers@1
+  name: alcops
+  displayName: 'Download ALCops Analyzers'
   inputs:
-    tfm: $(ALCopsDetectTfmFromMarketplace.tfm)
-    source: nuget
+    detectUsing: "latest"
+
+# Use the downloaded analyzers
+- script: |
+    alc.exe /project:"$(Build.SourcesDirectory)" \
+      /analyzer:"$(alcops.files)"
 ```
 
 ### Local Testing (without CI)
@@ -206,7 +201,8 @@ Subsequent pushes to `main` auto-update the dev extension. Azure DevOps picks up
 | Decision | Rationale |
 |----------|-----------|
 | **Node.js/TypeScript** over PowerShell | PowerShell isn't guaranteed on all Azure DevOps agents (especially Linux) |
-| **4 separate tasks** instead of 1 monolithic task | Clean separation of concerns; consumers only use what they need |
+| **5 tasks (1 active + 4 deprecated)** instead of removing legacy tasks | Backward compatibility for existing pipelines; deprecated tasks still function |
+| **`@alcops/core` `executeDownload()`** as single entry point | Combines TFM detection + download + extraction; aligns ADO extension with CLI |
 | **esbuild** over webpack/tsc output | Single-file bundles (~250-430KB), fast builds (<100ms), zero config |
 | **Binary search** (`Buffer.indexOf()`) for DLL analysis | Reads TargetFrameworkAttribute directly from .NET assemblies, no PE parsing or .NET runtime needed |
 | **HTTP Range requests** for remote ZIPs | Download ~200KB instead of ~2GB for BC artifacts or ~100MB for VSIX |

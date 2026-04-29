@@ -3,8 +3,9 @@
     "id": "6d877951-7f8c-4952-b646-8b1de43438a3",
     "name": "ALCopsDetectTfmFromBCArtifact",
     "friendlyName": "ALCops Detect TFM from BC Artifact",
-    "description": "Detect the target framework moniker from a Business Central artifact URL by reading its manifest",
-    "helpMarkDown": "[Learn more about this task](https://alcops.dev)",
+    "description": "[Deprecated] Use ALCopsDownloadAnalyzers@1 with detectUsing instead. Detect the target framework moniker from a Business Central artifact URL by reading its manifest",
+    "helpMarkDown": "**Deprecated**: Use [ALCopsDownloadAnalyzers@1](https://alcops.dev) with `detectUsing` instead. [Learn more](https://alcops.dev)",
+    "deprecated": true,
     "category": "Utility",
     "author": "ALCops",
     "version": {

@@ -1,0 +1,97 @@
+{
+    "$schema": "https://raw.githubusercontent.com/Microsoft/azure-pipelines-task-lib/master/tasks.schema.json",
+    "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "ALCopsDownloadAnalyzers",
+    "friendlyName": "ALCops Download Analyzers",
+    "description": "Download ALCops code analyzers for AL (Business Central) with automatic TFM detection",
+    "helpMarkDown": "[Learn more about this task](https://alcops.dev)",
+    "category": "Build",
+    "author": "ALCops",
+    "version": {
+        "Major": 1,
+        "Minor": 0,
+        "Patch": 0
+    },
+    "instanceNameFormat": "ALCops Download Analyzers $(version)",
+    "inputs": [
+        {
+            "name": "detectUsing",
+            "type": "string",
+            "label": "Detect TFM Using",
+            "defaultValue": "",
+            "required": false,
+            "helpMarkDown": "Input for TFM detection: a BC artifact URL, local compiler path, NuGet DevTools version/channel, or VS Marketplace version. Smart routing determines the detection source automatically. Use `detectFrom` to override."
+        },
+        {
+            "name": "detectFrom",
+            "type": "pickList",
+            "label": "Detection Source",
+            "defaultValue": "",
+            "required": false,
+            "options": {
+                "": "(auto-detect from input)",
+                "bc-artifact": "BC Artifact URL",
+                "marketplace": "VS Marketplace",
+                "nuget-devtools": "NuGet DevTools",
+                "compiler-path": "Local Compiler Path"
+            },
+            "helpMarkDown": "Force a specific detection source, overriding the automatic routing of `detectUsing`"
+        },
+        {
+            "name": "tfm",
+            "type": "pickList",
+            "label": "Target Framework",
+            "defaultValue": "",
+            "required": false,
+            "options": {
+                "": "(use detectUsing instead)",
+                "netstandard2.1": "netstandard2.1 (AL Language ≤ v15.x)",
+                "net8.0": "net8.0 (AL Language v16.0+)",
+                "net10.0": "net10.0 (future AL versions)"
+            },
+            "helpMarkDown": "Explicit .NET target framework. Skips TFM detection entirely. Provide either `tfm` or `detectUsing`."
+        },
+        {
+            "name": "version",
+            "type": "string",
+            "label": "ALCops Version",
+            "defaultValue": "latest",
+            "required": false,
+            "helpMarkDown": "Version to download: `latest`, `prerelease`, or a specific version (e.g., `1.2.3`)"
+        },
+        {
+            "name": "outputPath",
+            "type": "filePath",
+            "label": "Output Path",
+            "defaultValue": "",
+            "required": false,
+            "helpMarkDown": "Where to place extracted analyzer DLLs. Defaults to `$(Build.SourcesDirectory)/.alcops`"
+        }
+    ],
+    "outputVariables": [
+        {
+            "name": "version",
+            "description": "The downloaded ALCops analyzer version"
+        },
+        {
+            "name": "tfm",
+            "description": "The detected or specified target framework moniker"
+        },
+        {
+            "name": "outputDir",
+            "description": "Full path to the directory containing the extracted analyzer DLLs"
+        },
+        {
+            "name": "files",
+            "description": "Semicolon-separated list of analyzer DLL paths"
+        }
+    ],
+    "execution": {
+        "Node24_1": {
+            "target": "dist/index.js"
+        },
+        "Node20_1": {
+            "target": "dist/index.js"
+        }
+    }
+}

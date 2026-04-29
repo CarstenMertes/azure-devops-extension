@@ -3,8 +3,9 @@
     "id": "22bcba49-43e5-46f4-986d-239c7524eb5b",
     "name": "ALCopsInstallAnalyzers",
     "friendlyName": "ALCops Install Analyzers",
-    "description": "Download and install ALCops code analyzers for AL (Business Central) with automatic or manual TFM selection",
-    "helpMarkDown": "[Learn more about this task](https://alcops.dev)",
+    "description": "[Deprecated] Use ALCopsDownloadAnalyzers@1 instead. Download and install ALCops code analyzers for AL (Business Central) with automatic or manual TFM selection",
+    "helpMarkDown": "**Deprecated**: Use [ALCopsDownloadAnalyzers@1](https://alcops.dev) instead. [Learn more](https://alcops.dev)",
+    "deprecated": true,
     "category": "Build",
     "author": "ALCops",
     "version": {

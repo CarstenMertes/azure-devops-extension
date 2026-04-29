@@ -3,8 +3,9 @@
     "id": "fdd8b141-8aa3-40fd-a235-341eafc63b2f",
     "name": "ALCopsDetectTfmFromMarketplace",
     "friendlyName": "ALCops Detect TFM from VS Marketplace",
-    "description": "Detect the target framework moniker from the AL Language VS Code extension on the Visual Studio Marketplace",
-    "helpMarkDown": "[Learn more about this task](https://alcops.dev)",
+    "description": "[Deprecated] Use ALCopsDownloadAnalyzers@1 with detectUsing instead. Detect the target framework moniker from the AL Language VS Code extension on the Visual Studio Marketplace",
+    "helpMarkDown": "**Deprecated**: Use [ALCopsDownloadAnalyzers@1](https://alcops.dev) with `detectUsing` instead. [Learn more](https://alcops.dev)",
+    "deprecated": true,
     "category": "Utility",
     "author": "ALCops",
     "version": {

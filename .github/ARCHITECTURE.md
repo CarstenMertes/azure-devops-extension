@@ -2,103 +2,106 @@
 
 ## Overview
 
-The ALCops Azure DevOps Extension provides pipeline tasks for downloading and installing [ALCops code analyzers](https://alcops.dev) for AL (Business Central). The extension solves one key problem: **matching the correct analyzer DLLs to the consumer's AL compiler version** via Target Framework Moniker (TFM) detection.
+The ALCops Azure DevOps Extension provides a pipeline task for downloading [ALCops code analyzers](https://alcops.dev) for AL (Business Central). The extension solves one key problem: **matching the correct analyzer DLLs to the consumer's AL compiler version** via Target Framework Moniker (TFM) detection.
 
 ## Task Architecture
 
-The extension is split into **4 independent tasks** packaged in a single `.vsix`:
+The extension ships **`ALCopsDownloadAnalyzers`** as the primary task, wrapping `@alcops/core`'s `executeDownload()` pipeline. Four legacy tasks remain in the `.vsix` for backward compatibility but are deprecated.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Single .vsix Extension                       │
-│                                                                     │
-│  ┌────────────────────┐  ┌────────────────────┐                     │
-│  │  DetectTfmFrom      │  │  DetectTfmFrom      │                   │
-│  │  BCArtifact         │  │  NuGetDevTools       │  Detection tasks  │
-│  │  (261 KB)           │  │  (250 KB)            │  output: tfm      │
-│  └────────┬───────────┘  └────────┬─────────────┘                   │
-│           │                       │                                  │
-│  ┌────────┴───────────┐          │                                  │
-│  │  DetectTfmFrom      │          │                                  │
-│  │  Marketplace        │          │                                  │
-│  │  (431 KB)           │          │                                  │
-│  └────────┬───────────┘          │                                  │
-│           │      ┌───────────────┘                                  │
-│           ▼      ▼                                                   │
-│  ┌─────────────────────────────────────────────────────┐            │
-│  │              ALCopsInstallAnalyzers                   │           │
-│  │              (431 KB)                                 │  Core     │
-│  │                                                       │  task    │
-│  │  Inputs: tfm (manual) | compilerPath (auto-detect)    │          │
-│  │  Output: analyzerPath, analyzers, tfm, alcopsVersion  │          │
-│  └───────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        Single .vsix Extension                        │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │              ALCopsDownloadAnalyzers (recommended)              │  │
+│  │                                                                │  │
+│  │  detectUsing → smart routing → TFM detection → download →     │  │
+│  │  extract → output variables                                    │  │
+│  │                                                                │  │
+│  │  Inputs: detectUsing, detectFrom, tfm, version, outputPath    │  │
+│  │  Outputs: version, tfm, outputDir, files                      │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  Legacy tasks (deprecated, kept for backward compatibility)    │  │
+│  │                                                                │  │
+│  │  ALCopsInstallAnalyzers       → use ALCopsDownloadAnalyzers   │  │
+│  │  ALCopsDetectTfmFromBCArtifact     → use detectUsing          │  │
+│  │  ALCopsDetectTfmFromNuGetDevTools  → use detectUsing          │  │
+│  │  ALCopsDetectTfmFromMarketplace    → use detectUsing          │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-### Why Separate Tasks?
+### Why a Single Task?
 
-A single task with 5+ TFM detection modes was confusing. Separate tasks:
+The previous architecture had 4 separate tasks (3 detection + 1 install) that consumers chained together. The `@alcops/core` package now provides `executeDownload()` which combines detection and download into one call with smart source routing via `detectUsing`. This simplifies pipeline YAML from two steps to one:
 
-1. **Composable** — consumers chain only what they need in their pipeline YAML
-2. **Single responsibility** — each task does one thing well
-3. **Discoverable** — clear names in the Azure DevOps task picker
-4. **Independently versionable** — a fix to marketplace detection doesn't require re-testing the core installer
+```yaml
+# Before (deprecated two-step)
+- task: ALCopsDetectTfmFromBCArtifact@1
+  name: detectTfm
+  inputs:
+    artifactUrl: "$(bcArtifactUrl)"
+- task: ALCopsInstallAnalyzers@1
+  inputs:
+    tfm: "$(detectTfm.tfm)"
+
+# After (single step)
+- task: ALCopsDownloadAnalyzers@1
+  name: alcops
+  inputs:
+    detectUsing: "$(bcArtifactUrl)"
+```
 
 ## Directory Structure
 
 ```
 azure-devops-extension/
 ├── shared/                              ← Shared TypeScript modules
-│   ├── types.ts                         Constants, types, interfaces
 │   ├── logger.ts                        Logger interface + ADO pipeline logger
-│   ├── log-inputs.ts                    Task input logging helper
-│   ├── http-client.ts                   Gzip-aware HTTPS client with User-Agent
-│   ├── nuget-registration.ts            NuGet V3 Registration API client
-│   ├── version-threshold.ts             .NET runtime version → TFM mapping
-│   ├── http-range.ts                    HTTP Range requests + remote ZIP parsing
-│   ├── zip-local.ts                     In-memory ZIP extraction from Buffer
-│   ├── binary-tfm.ts                    Binary search for TFM + assembly version in DLL
-│   ├── vsix-tfm.ts                      VSIX → DLL → binary search → TFM (shared chain)
-│   └── bc-artifact-url.ts               BC artifact URL parsing + variant construction
+│   └── log-inputs.ts                    Task input logging helper
 │
 ├── tasks/
-│   ├── install-analyzers/                  ← Core install task
+│   ├── download/                        ← ALCopsDownloadAnalyzers (recommended)
 │   │   ├── task.json                    Azure DevOps task definition
 │   │   ├── src/
 │   │   │   ├── index.ts                 Entry point (calls task-runner)
-│   │   │   ├── task-runner.ts           Orchestrator: TFM → download → extract → outputs
-│   │   │   ├── nuget-api.ts             NuGet version resolution + download
-│   │   │   ├── nuget-extractor.ts       ZIP extraction with TFM folder selection
-│   │   │   └── compiler-path.ts         PE parsing for auto-detect from ALC.exe
+│   │   │   └── task-runner.ts           Orchestrator: inputs → executeDownload() → outputs
 │   │   └── dist/index.js               esbuild bundle output
 │   │
-│   ├── detect-tfm-bc-artifact/          ← BC Artifact detection task
+│   ├── install-analyzers/               ← Deprecated: ALCopsInstallAnalyzers
 │   │   ├── task.json
 │   │   ├── src/
 │   │   │   ├── index.ts
-│   │   │   ├── task-runner.ts
-│   │   │   └── bc-artifact.ts           3-step waterfall: manifest → core → platform
+│   │   │   └── task-runner.ts           Legacy orchestrator: TFM → download → extract → outputs
 │   │   └── dist/index.js
 │   │
-│   ├── detect-tfm-nuget-devtools/       ← NuGet DevTools detection task
+│   ├── detect-tfm-bc-artifact/          ← Deprecated: ALCopsDetectTfmFromBCArtifact
 │   │   ├── task.json
 │   │   ├── src/
 │   │   │   ├── index.ts
-│   │   │   ├── task-runner.ts
-│   │   │   └── nuget-devtools.ts        NuGet API → HTTP Range + binary search → TFM
+│   │   │   └── task-runner.ts
 │   │   └── dist/index.js
 │   │
-│   └── detect-tfm-marketplace/          ← VS Marketplace detection task
+│   ├── detect-tfm-nuget-devtools/       ← Deprecated: ALCopsDetectTfmFromNuGetDevTools
+│   │   ├── task.json
+│   │   ├── src/
+│   │   │   ├── index.ts
+│   │   │   └── task-runner.ts
+│   │   └── dist/index.js
+│   │
+│   └── detect-tfm-marketplace/          ← Deprecated: ALCopsDetectTfmFromMarketplace
 │       ├── task.json
 │       ├── src/
 │       │   ├── index.ts
-│       │   ├── task-runner.ts
-│       │   └── marketplace.ts           Marketplace API → VSIX → shared vsix-tfm → TFM
+│       │   └── task-runner.ts
 │       └── dist/index.js
 │
 ├── tests/                               ← All tests (mirrors task structure)
 │   ├── scaffold.test.ts                 Structural smoke tests
 │   ├── shared/
+│   ├── download/
 │   ├── install-analyzers/
 │   ├── detect-tfm-bc-artifact/
 │   ├── detect-tfm-nuget-devtools/
@@ -121,7 +124,7 @@ azure-devops-extension/
 │
 ├── package.json                         Dependencies + scripts
 ├── tsconfig.json                        TypeScript config (shared + all tasks)
-├── esbuild.config.mjs                   Multi-entry bundler (4 tasks)
+├── esbuild.config.mjs                   Multi-entry bundler (5 tasks)
 ├── vitest.config.ts                     Test runner config
 ├── GitVersion.yml                       GitVersion config (GitHubFlow/v1)
 ├── vss-extension.json                   Production Marketplace manifest
@@ -135,99 +138,19 @@ azure-devops-extension/
 
 Code in `shared/` is imported by task source files and **bundled into each task** by esbuild. There are no runtime shared dependencies — each task's `dist/index.js` is a self-contained bundle.
 
-### types.ts
+The shared modules provide lightweight ADO-specific utilities:
 
-Constants and interfaces used across all tasks:
+### logger.ts
 
-| Export | Value | Used By |
-|--------|-------|---------|
-| `AL_COMPILER_DLL` | `'Microsoft.Dynamics.Nav.CodeAnalysis.dll'` | compiler-path |
-| `NUGET_PACKAGE_NAME` | `'ALCops.Analyzers'` | nuget-api, nuget-registration |
-| `NUGET_FLAT_CONTAINER` | `'https://api.nuget.org/v3-flatcontainer'` | nuget-api, nuget-devtools |
-| `NUGET_REGISTRATION_BASE` | `'https://api.nuget.org/v3/registration5-gz-semver2'` | nuget-registration |
-| `VS_MARKETPLACE_API` | VS Marketplace gallery endpoint | marketplace |
-| `AL_EXTENSION_ID` | `'ms-dynamics-smb.al'` | marketplace |
-| `VSIX_DLL_PATH` | `'extension/bin/Analyzers/...'` | vsix-tfm |
-| `TFM_PREFERENCE` | `['net10.0', ..., 'netstandard2.0']` | nuget-extractor, nuget-devtools |
-| `TfmDetectionResult` | Interface: `{ tfm, source, details? }` | All detection modules |
-| `RegistrationIndex` | Interface: Registration API index response | nuget-registration |
-| `RegistrationPage` | Interface: Registration API page | nuget-registration |
-| `RegistrationLeaf` | Interface: Registration API leaf (version entry) | nuget-registration |
-| `RegistrationVersion` | Interface: `{ version, listed, packageContent }` | nuget-api, nuget-registration |
+Creates a logger that routes to Azure DevOps pipeline commands (`tl.debug`, `tl.warning`, `tl.error`, `console.log`). Implements the `Logger` interface from `@alcops/core`.
 
-### binary-tfm.ts
+### log-inputs.ts
 
-Binary search for TFM and assembly version directly from .NET assembly DLL buffers using `Buffer.indexOf()`. No PE parsing required.
+Reads and logs all task inputs defined in `task.json` for pipeline debugging. Automatically masks sensitive values.
 
-- `detectTfmFromBuffer(buffer)` — Searches for `TargetFrameworkAttribute` then extracts the TFM string (e.g., `.NETCoreApp,Version=v8.0` → `net8.0`)
-- `detectAssemblyVersionFromBuffer(buffer)` — Searches for `AssemblyFileVersionAttribute` then extracts the version using blob format validation (`\x01\x00` prolog + length byte + version string)
-- `toShortTfm(longTfm)` — Converts long-form TFM to short form (e.g., `.NETCoreApp,Version=v8.0` → `net8.0`)
+### Core Logic (`@alcops/core`)
 
-### http-client.ts
-
-Gzip-aware HTTPS client with `User-Agent` header support. Used by `nuget-registration.ts` for the gzip-compressed Registration API and by `nuget-api.ts` for binary package downloads.
-
-- `httpsGetBuffer(url, userAgent?)` — Fetches a URL, decompresses gzip if `Content-Encoding: gzip`, follows redirects (up to 5 hops)
-- `httpsGetJson<T>(url, userAgent?)` — Fetches and JSON-parses in one step
-
-### nuget-registration.ts
-
-NuGet V3 Registration API client. Queries the `registration5-gz-semver2` hive (gzip-compressed, SemVer 2.0.0 inclusive) to get version metadata including listing status and download URLs.
-
-- `parseRegistrationIndex(index)` — Pure function: extracts `RegistrationVersion[]` from a `RegistrationIndex`. Defaults `listed` to `true` when absent. Skips pages without inlined items.
-- `queryNuGetRegistration(packageName, userAgent?, logger?)` — Full pipeline: fetches the registration index, resolves external pages in parallel (`Promise.all`), returns all versions.
-
-Pagination: NuGet.org inlines page items for packages with < 128 versions. For >= 128 versions, pages are external references (no `items` array). The module detects this and fetches external pages in parallel.
-
-### version-threshold.ts
-
-Pure logic — no I/O, no dependencies beyond `types.ts`.
-
-- `getTargetFrameworkFromDotNetVersion(dotNetVersion)` — Maps .NET runtime version (e.g., `"8.0.24"`) to TFM
-
-### http-range.ts
-
-HTTP Range request utilities for reading specific bytes from remote ZIP files without downloading the entire file. This is critical for BC artifacts (~2GB) and VSIX files (~100MB).
-
-```
-Full file:  [========================================] 2 GB
-Downloaded: [..EOCD] + [..central-dir..] + [..file..]  ~200 KB
-```
-
-Key functions:
-- `fetchRange(url, start, end)` — GET with `Range: bytes=start-end` header, follows redirects
-- `getContentLength(url)` — HEAD request to get file size
-- `readZipEOCD(url)` — Reads End of Central Directory from last ~65KB
-- `parseZipCentralDirectory(buffer)` — Parses central directory entries from raw bytes
-- `extractRemoteZipEntry(url, entryPath)` — End-to-end: find entry → read local header → decompress
-
-### zip-local.ts
-
-In-memory ZIP extraction for processing nested ZIPs (e.g., extracting a DLL from a VSIX that was itself extracted from a BC artifact). Complements `http-range.ts` which works with remote URLs.
-
-Key functions:
-- `extractZipEntryFromBuffer(zipBuffer, entryPath)` — Extract a single file from an in-memory ZIP buffer. Supports exact path match and basename match (e.g., `'ALLanguage.vsix'` finds `'path/to/ALLanguage.vsix'`)
-- `findEntryByFilename(entries, target)` — Scan central directory entries for a filename match
-- `extractRemoteZipCentralEntry(url, entry)` — Extract a specific central directory entry from a remote ZIP
-- `listZipEntries(zipBuffer)` — List all entries in a ZIP buffer
-
-Reuses `parseZipCentralDirectory` from `http-range.ts` for the central directory parsing.
-
-### vsix-tfm.ts
-
-Shared VSIX → DLL → TFM detection chain. Extracts the CodeAnalysis DLL from an ALLanguage.vsix buffer, binary-searches it for the TFM and assembly version. Used by both the **marketplace** and **bc-artifact** tasks.
-
-- `detectTfmFromVsixBuffer(vsixBuffer)` → `{ tfm, assemblyVersion }`
-  1. Extracts `VSIX_DLL_PATH` from the VSIX using `extractZipEntryFromBuffer`
-  2. Binary-searches the DLL for `TargetFrameworkAttribute` and `AssemblyFileVersionAttribute`
-
-### bc-artifact-url.ts
-
-BC artifact URL parsing and variant URL construction. Follows the same URL splitting convention as [navcontainerhelper](https://github.com/microsoft/navcontainerhelper) (`parts[3]=type, parts[4]=version, parts[5]=country`).
-
-- `parseArtifactUrl(artifactUrl)` → `{ baseUrl, type, version, country, query }`
-- `buildArtifactVariantUrl(artifactUrl, variant)` — Replaces the country segment (e.g., `w1` → `core` or `platform`)
-- `downloadFullZip(url)` — Full GET download into a Buffer (for small artifacts like "core")
+All TFM detection, NuGet API interaction, HTTP Range requests, binary PE parsing, and ZIP extraction logic lives in the [`@alcops/core`](https://www.npmjs.com/package/@alcops/core) package. The ADO tasks are thin wrappers that read inputs, call `@alcops/core` functions, and set output variables.
 
 ## TFM Detection Flow
 
@@ -259,17 +182,19 @@ Major < 8   →  netstandard2.1
 ## Build Pipeline
 
 ```
-TypeScript Sources          esbuild (4 parallel)        tfx-cli
+TypeScript Sources          esbuild (5 parallel)        tfx-cli
     shared/*.ts     ─┐
     tasks/A/src/*.ts ─┤──→  tasks/A/dist/index.js  ──┐
-    tasks/B/src/*.ts ─┤──→  tasks/B/dist/index.js  ──┤──→  .vsix
-    tasks/C/src/*.ts ─┤──→  tasks/C/dist/index.js  ──┤
-    tasks/D/src/*.ts ─┘──→  tasks/D/dist/index.js  ──┘
+    tasks/B/src/*.ts ─┤──→  tasks/B/dist/index.js  ──┤
+    tasks/C/src/*.ts ─┤──→  tasks/C/dist/index.js  ──┤──→  .vsix
+    tasks/D/src/*.ts ─┤──→  tasks/D/dist/index.js  ──┤
+    tasks/E/src/*.ts ─┘──→  tasks/E/dist/index.js  ──┘
 ```
 
 - **esbuild** bundles each task into a single CJS file targeting Node 24
 - Shared modules are tree-shaken into each bundle (no runtime shared dependency)
-- `tfx extension create` packages all 4 task directories + metadata into a single `.vsix`
+- `@alcops/core` is bundled into each task (no external dependency at runtime)
+- `tfx extension create` packages all 5 task directories + metadata into a single `.vsix`
 
 ## CI/CD & Versioning
 
@@ -339,9 +264,8 @@ On the Azure DevOps agent:
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `azure-pipelines-task-lib` | ^5.2.8 | Azure DevOps task SDK (inputs, outputs, logging) |
-| `fflate` | ^0.8.2 | ZIP compression/decompression (pure JS) |
-| `semver` | ^7.7.4 | Semantic version comparison |
+| `@alcops/core` | ^0.1.1 | Core logic: TFM detection, NuGet API, download, extraction |
+| `azure-pipelines-task-lib` | ^5.2.10 | Azure DevOps task SDK (inputs, outputs, logging) |
 
 Dev dependencies: TypeScript, esbuild, vitest, eslint, tfx-cli.
 
@@ -357,20 +281,10 @@ Dev dependencies: TypeScript, esbuild, vitest, eslint, tfx-cli.
 
 | Test File | Module | Tests |
 |-----------|--------|-------|
-| `scaffold.test.ts` | Structure verification | 14 |
-| `shared/version-threshold.test.ts` | .NET runtime version → TFM mapping | 6 |
-| `shared/binary-tfm.test.ts` | Binary TFM + assembly version extraction | 17 |
-| `shared/http-range.test.ts` | HTTP Range + ZIP parsing | 21 |
-| `shared/zip-local.test.ts` | In-memory ZIP extraction | 11 |
-| `shared/vsix-tfm.test.ts` | VSIX → DLL → binary search → TFM chain | 5 |
-| `shared/bc-artifact-url.test.ts` | Artifact URL parsing + variant construction | 7 |
-| `install-analyzers/nuget-api.test.ts` | NuGet API client | 11 |
-| `install-analyzers/nuget-extractor.test.ts` | ZIP extraction + TFM compat matching | 17 |
-| `install-analyzers/compiler-path.test.ts` | Binary TFM detection from real fixture DLLs | 15 |
-| `install-analyzers/task-runner.test.ts` | Core task orchestration | 4 |
-| `detect-tfm-bc-artifact/*.test.ts` | BC Artifact 3-step waterfall + task-runner | 16 |
-| `detect-tfm-nuget-devtools/*.test.ts` | NuGet DevTools HTTP Range detection + task-runner | 14 |
-| `detect-tfm-marketplace/*.test.ts` | Marketplace detection + task-runner | 17 |
+| `scaffold.test.ts` | Structure verification | 16 |
 | `shared/log-inputs.test.ts` | Task input logging | 9 |
-| `shared/nuget-registration.test.ts` | NuGet V3 Registration API parsing + HTTP | 13 |
-| **Total** | | **199** |
+| `download/task-runner.test.ts` | ALCopsDownloadAnalyzers orchestration | 7 |
+| `install-analyzers/task-runner.test.ts` | Legacy install task orchestration | 4 |
+| `detect-tfm-bc-artifact/*.test.ts` | Legacy BC Artifact task | 2 |
+| `detect-tfm-nuget-devtools/*.test.ts` | Legacy NuGet DevTools task | 3 |
+| `detect-tfm-marketplace/*.test.ts` | Legacy Marketplace task | 5 |

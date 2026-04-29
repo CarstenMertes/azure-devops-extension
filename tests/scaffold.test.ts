@@ -38,6 +38,7 @@ describe('scaffold: shared types', () => {
 
 describe('scaffold: task.json files', () => {
     const taskDirs = [
+        'download',
         'install-analyzers',
         'detect-tfm-bc-artifact',
         'detect-tfm-nuget-devtools',
