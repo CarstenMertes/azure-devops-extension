@@ -1,6 +1,6 @@
 {
     "$schema": "https://raw.githubusercontent.com/Microsoft/azure-pipelines-task-lib/master/tasks.schema.json",
-    "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "id": "d6dd2cf3-7995-4e13-b403-e96457ce403e",
     "name": "ALCopsDownloadAnalyzers",
     "friendlyName": "ALCops Download Analyzers",
     "description": "Download ALCops code analyzers for AL (Business Central) with automatic TFM detection",
